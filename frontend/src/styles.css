@@ -1,0 +1,171 @@
+:root {
+  --color-primary: #2B4C6F;
+  --color-primary-dark: #16293D;
+  --color-bg: #F7F5F0;
+  --color-surface: #FFFFFF;
+  --color-success: #2E7D5B;
+  --color-warning: #C77B23;
+  --color-error: #B33A3A;
+  --color-text: #33322E;
+  --color-text-muted: #7A776D;
+
+  --font-sans: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.screen {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+}
+
+.card {
+  background: var(--color-surface);
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+  margin: 0 0 20px 0;
+}
+
+label {
+  display: block;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin-bottom: 6px;
+}
+
+input {
+  width: 100%;
+  height: 44px;
+  padding: 0 12px;
+  margin-bottom: 16px;
+  border: 1px solid #DAD7CE;
+  border-radius: 8px;
+  font-size: 17px;
+  font-family: var(--font-sans);
+}
+
+input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.btn-primary {
+  width: 100%;
+  height: 48px;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-primary:active {
+  background: var(--color-primary-dark);
+}
+
+.error-text {
+  color: var(--color-error);
+  font-size: 14px;
+  margin: -8px 0 16px 0;
+  display: none;
+}
+
+.error-text.visible {
+  display: block;
+}
+
+.muted {
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.btn-secondary {
+  width: 100%;
+  height: 44px;
+  background: transparent;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+/* Category picker (Take-Out / Add-Stock flows) */
+.category-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-category {
+  width: 100%;
+  height: 56px;
+  background: var(--color-surface);
+  border: 2px solid var(--color-primary);
+  color: var(--color-primary-dark);
+  border-radius: 10px;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-category:active {
+  background: var(--color-primary);
+  color: white;
+}
+
+/* Status-colored confirmation card — the app's signature element (see design.md §6).
+   Used identically across take-out, add-stock, and later bill confirmation. */
+.status-card {
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.status-card.status-success {
+  background: #E7F1EC;
+  border: 1px solid var(--color-success);
+}
+
+.status-card.status-warning {
+  background: #FBF0E3;
+  border: 1px solid var(--color-warning);
+}
+
+.status-card.status-error {
+  background: #F7E7E7;
+  border: 1px solid var(--color-error);
+}
+
+.status-label {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+  color: var(--color-text);
+}

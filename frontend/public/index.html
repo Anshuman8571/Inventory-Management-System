@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Stock Inventory</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="src/styles.css" />
+</head>
+<body>
+  <div class="screen">
+    <div class="card">
+      <h1 class="title">Stock Inventory</h1>
+
+      <form id="login-form">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" required />
+
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required />
+
+        <p id="login-error" class="error-text"></p>
+
+        <button type="submit" class="btn-primary">Log In</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="src/api.js"></script>
+  <script src="src/camera.js"></script>
+  <script src="src/categorySelect.js"></script>
+  <script src="src/confirmCard.js"></script>
+  <script src="src/scan.js"></script>
+  <script src="src/auth.js"></script>
+</body>
+</html>
