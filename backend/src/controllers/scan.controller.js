@@ -24,18 +24,25 @@ async function createScan(req, res, next) {
     if (!parsed.success) {
       throw makeError('Category and photo are required.', 400, 'INVALID_INPUT');
     }
-    const { category, imageBase64, mediaType, flowType } = parsed.data;
+    const { category, imageBase64, mediaType, flowType, isManual } = parsed.data;
 
-    const extracted = await extractionService.extractStickerFields({
-      imageBase64,
-      mediaType,
-      category,
-    });
+    let extracted;
+    let match = null;
 
-    const match = await matchingService.findBestMatch({
-      category,
-      extractedName: extracted.name,
-    });
+    if (isManual) {
+      extracted = { name: '', size: '', type: '', company: '' };
+    } else {
+      extracted = await extractionService.extractStickerFields({
+        imageBase64,
+        mediaType,
+        category,
+      });
+
+      match = await matchingService.findBestMatch({
+        category,
+        extractedName: extracted.name,
+      });
+    }
 
     const scanEvent = await scanEventsModel.create({
       flowType,

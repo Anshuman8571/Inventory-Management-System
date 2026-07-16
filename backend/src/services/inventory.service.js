@@ -107,4 +107,60 @@ async function confirmScanEvent({
   }
 }
 
-module.exports = { confirmScanEvent };
+async function confirmBillEvent({ billId, items, confirmedByUserId }) {
+  const client = await db.pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const stockMovementsModel = require('../models/stockMovements.model'); // ensure required
+    const billsModel = require('../models/bills.model'); // ensure required
+
+    for (const item of items) {
+      let productId = item.productId;
+
+      if (item.isNewProduct) {
+        if (!item.newProductDetails || !item.newProductDetails.name || !item.newProductDetails.category) {
+          throw makeError('Product name and category are required to add a new product.', 400, 'INVALID_INPUT');
+        }
+        const created = await productsModel.create(
+          {
+            category: item.newProductDetails.category,
+            name: item.newProductDetails.name,
+            company: item.newProductDetails.company,
+            unit: item.newProductDetails.unit,
+            attributes: item.newProductDetails.attributes,
+            initialQty: 0,
+          },
+          client
+        );
+        productId = created.id;
+      }
+
+      if (!productId) {
+        throw makeError('No product to apply this line item to.', 400, 'INVALID_STATE');
+      }
+
+      // Bill flow is always "add_stock"
+      const changeQty = Math.abs(item.qty);
+      await productsModel.incrementQty(productId, changeQty, client);
+
+      await stockMovementsModel.create(
+        { productId, changeQty, scanEventId: null }, // no single scanEventId for bills yet, or we add billLineItemId later
+        client
+      );
+
+      await billsModel.updateBillLineItem(item.id, { confirmedQty: item.qty, confirmed: true }, client);
+    }
+
+    await client.query('COMMIT');
+    return { success: true, count: items.length };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { confirmScanEvent, confirmBillEvent };

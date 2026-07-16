@@ -15,8 +15,8 @@ app.get('/health', (req, res) => {
 // Route modules, mounted as they're built, phase by phase:
 app.use('/auth', require('./routes/auth.routes'));
 app.use('/scan', require('./routes/scan.routes'));
-// app.use('/bills', require('./routes/bills.routes'));
-// app.use('/products', require('./routes/products.routes'));
+app.use('/products', require('./routes/products.routes'));
+app.use('/bills', require('./routes/bills.routes'));
 
 // 404 handler for anything not matched above
 app.use((req, res) => {

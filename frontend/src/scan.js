@@ -37,13 +37,34 @@ async function captureAndScan(container, category, flowType) {
     container.innerHTML = `
       <p class="error-text visible">${err.message}</p>
       <button type="button" class="btn-primary" id="retry-btn">Try Again</button>
+      <button type="button" class="btn-secondary" id="manual-btn" style="margin-top: 10px;">Enter Manually</button>
     `;
     document
       .getElementById('retry-btn')
       .addEventListener('click', () => captureAndScan(container, category, flowType));
+    document
+      .getElementById('manual-btn')
+      .addEventListener('click', () => doManualEntry(container, category, flowType));
     return;
   }
 
+  showConfirm(container, scanResult, category, flowType);
+}
+
+async function doManualEntry(container, category, flowType) {
+  container.innerHTML = `<p class="muted">Preparing manual entry...</p>`;
+  try {
+    const scanResult = await window.api.apiRequest('/scan', {
+      method: 'POST',
+      body: { category, flowType, isManual: true },
+    });
+    showConfirm(container, scanResult, category, flowType);
+  } catch (err) {
+    container.innerHTML = `<p class="error-text visible">Failed to start manual entry: ${err.message}</p>`;
+  }
+}
+
+function showConfirm(container, scanResult, category, flowType) {
   renderConfirmCard(container, {
     extracted: scanResult.extracted,
     isNewProduct: scanResult.isNewProduct,
@@ -89,3 +110,4 @@ function showScanSuccess(container, flowType) {
 }
 
 window.startScanFlow = startScanFlow;
+window.doManualEntry = doManualEntry;

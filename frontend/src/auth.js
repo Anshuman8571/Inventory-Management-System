@@ -32,7 +32,11 @@
   // for now both roles land on the same Take-Out scan flow.
   function redirectForRole(role) {
     const card = document.querySelector('.card');
-    window.startScanFlow(card, { flowType: 'take_out' });
+    if (window.renderHomeScreen) {
+      window.renderHomeScreen(card);
+    } else {
+      window.startScanFlow(card, { flowType: 'take_out' });
+    }
   }
 
   form.addEventListener('submit', async (e) => {

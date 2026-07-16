@@ -9,10 +9,12 @@ function runner(client) {
 }
 
 async function findByCategory(category, client) {
-  const result = await runner(client).query(
-    'SELECT id, name, company, unit, current_qty, attributes FROM products WHERE category = $1',
-    [category]
-  );
+  const query = category 
+    ? 'SELECT id, name, company, unit, current_qty, attributes FROM products WHERE category = $1'
+    : 'SELECT id, name, company, unit, current_qty, attributes FROM products';
+  const params = category ? [category] : [];
+  
+  const result = await runner(client).query(query, params);
   return result.rows;
 }
 
