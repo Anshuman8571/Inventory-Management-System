@@ -69,15 +69,21 @@ function showConfirm(container, scanResult, category, flowType) {
     extracted: scanResult.extracted,
     isNewProduct: scanResult.isNewProduct,
     match: scanResult.match,
+    category, // needed so confirmCard.js can offer "select an existing product" scoped correctly
     onRetake: () => captureAndScan(container, category, flowType),
-    onConfirm: async ({ qty, newProductDetails }) => {
+    onConfirm: async ({ qty, newProductDetails, selectedProductId }) => {
       try {
         await window.api.apiRequest(`/scan/${scanResult.scanEventId}/confirm`, {
           method: 'POST',
           body: {
             qty,
-            isNewProduct: scanResult.isNewProduct,
-            newProductDetails: scanResult.isNewProduct ? newProductDetails : undefined,
+            // If the user picked an existing product from the dropdown, this always
+            // targets that product directly, regardless of what the scan/manual-entry
+            // step originally flagged (see memory.md: manual entry duplicate-product fix).
+            isNewProduct: selectedProductId ? false : scanResult.isNewProduct,
+            newProductDetails:
+              !selectedProductId && scanResult.isNewProduct ? newProductDetails : undefined,
+            selectedProductId: selectedProductId || undefined,
           },
         });
         showScanSuccess(container, flowType);

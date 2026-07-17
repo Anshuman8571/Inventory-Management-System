@@ -32,6 +32,17 @@ async function getBillLineItems(billId, client = db) {
   return result.rows;
 }
 
+// Locks the row for the duration of a transaction so the same line item can't be
+// confirmed twice concurrently (e.g. a double-tap or a retried network request) —
+// same pattern as scanEvents.model.js's findByIdForUpdate.
+async function findLineItemForUpdate(id, client) {
+  const result = await client.query(
+    'SELECT * FROM bill_line_items WHERE id = $1 FOR UPDATE',
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
 async function updateBillLineItem(id, { confirmedQty, confirmed }, client = db) {
   const result = await client.query(
     'UPDATE bill_line_items SET confirmed_qty = $1, confirmed = $2 WHERE id = $3 RETURNING *',
@@ -52,6 +63,7 @@ module.exports = {
   createBill,
   createBillLineItem,
   getBillLineItems,
+  findLineItemForUpdate,
   updateBillLineItem,
   updateTotalItems,
 };

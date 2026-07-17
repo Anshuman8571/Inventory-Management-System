@@ -1,5 +1,5 @@
-// Handles the Take-Out flow (Phase 2). Phase 3 (Add-Stock via individual sticker) will
-// call these exact same endpoints with flowType='add_stock' — no duplicate controller.
+// Handles the Take-Out flow (Phase 2) and Add-Stock via individual sticker (Phase 3) —
+// both call these same endpoints, differing only by flowType.
 
 const extractionService = require('../services/extraction.service');
 const matchingService = require('../services/matching.service');
@@ -16,8 +16,7 @@ function makeError(message, status, code) {
 }
 
 // Step 1: photo + category in, extracted fields + best match (or "new product") out.
-// Nothing is written to products/stock_movements here — only a pending scan_events row,
-// since nothing should change inventory before a human confirms it (see rules.md).
+// Nothing is written to products/stock_movements here — only a pending scan_events row.
 async function createScan(req, res, next) {
   try {
     const parsed = scanRequestSchema.safeParse(req.body);
@@ -100,6 +99,7 @@ async function confirmScan(req, res, next) {
         : null,
       correctedFields: parsed.data.correctedFields,
       confirmedByUserId: req.user.userId,
+      selectedProductId: parsed.data.selectedProductId,
     });
 
     res.json({ product: result.product, movement: result.movement });

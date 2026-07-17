@@ -1,15 +1,15 @@
 // The ONLY place in the codebase that mutates stock quantities or writes stock_movements.
-// Every confirm action — take-out, add-stock (sticker), and later bill bulk-confirm — must
+// Every confirm action — take-out, add-stock (sticker), and bill bulk-confirm — must
 // route through here, so stock logic never drifts between flows (see architecture.md §5).
 //
-// Wrapped in a DB transaction: either the whole confirm succeeds (product created/updated,
-// quantity changed, movement logged, scan event marked confirmed) or none of it applies —
+// Wrapped in a DB transaction: either the whole confirm succeeds or none of it applies —
 // partial application is not acceptable (see rules.md, error handling rules).
 
 const db = require('../config/db');
 const productsModel = require('../models/products.model');
 const scanEventsModel = require('../models/scanEvents.model');
 const stockMovementsModel = require('../models/stockMovements.model');
+const billsModel = require('../models/bills.model');
 
 function makeError(message, status, code) {
   const err = new Error(message);
@@ -27,6 +27,7 @@ async function confirmScanEvent({
   newProductDetails,
   correctedFields,
   confirmedByUserId,
+  selectedProductId,
 }) {
   const client = await db.pool.connect();
 
@@ -41,7 +42,10 @@ async function confirmScanEvent({
       throw makeError('This scan has already been confirmed.', 409, 'ALREADY_CONFIRMED');
     }
 
-    let productId = scanEvent.matched_product_id;
+    // selectedProductId lets the confirm step target an existing product directly —
+    // used when manual entry (or a failed/incorrect match) should update a real
+    // product's stock instead of always creating a new one.
+    let productId = selectedProductId || scanEvent.matched_product_id;
 
     if (isNewProduct) {
       if (!newProductDetails || !newProductDetails.name) {
@@ -113,15 +117,26 @@ async function confirmBillEvent({ billId, items, confirmedByUserId }) {
   try {
     await client.query('BEGIN');
 
-    const stockMovementsModel = require('../models/stockMovements.model'); // ensure required
-    const billsModel = require('../models/bills.model'); // ensure required
-
     for (const item of items) {
+      // Lock + check "already confirmed" first — without this, a duplicate/retried
+      // confirm request could double-apply the same line item's stock change.
+      const lineItem = await billsModel.findLineItemForUpdate(item.id, client);
+      if (!lineItem) {
+        throw makeError(`Bill line item ${item.id} not found.`, 404, 'NOT_FOUND');
+      }
+      if (lineItem.confirmed) {
+        continue; // already applied earlier — skip silently, don't double-add stock
+      }
+
       let productId = item.productId;
 
       if (item.isNewProduct) {
         if (!item.newProductDetails || !item.newProductDetails.name || !item.newProductDetails.category) {
-          throw makeError('Product name and category are required to add a new product.', 400, 'INVALID_INPUT');
+          throw makeError(
+            'Product name and category are required to add a new product.',
+            400,
+            'INVALID_INPUT'
+          );
         }
         const created = await productsModel.create(
           {
@@ -146,7 +161,7 @@ async function confirmBillEvent({ billId, items, confirmedByUserId }) {
       await productsModel.incrementQty(productId, changeQty, client);
 
       await stockMovementsModel.create(
-        { productId, changeQty, scanEventId: null }, // no single scanEventId for bills yet, or we add billLineItemId later
+        { productId, changeQty, scanEventId: null },
         client
       );
 
