@@ -10,6 +10,7 @@ const productsModel = require('../models/products.model');
 const scanEventsModel = require('../models/scanEvents.model');
 const stockMovementsModel = require('../models/stockMovements.model');
 const billsModel = require('../models/bills.model');
+const pricingService = require('./pricing.service');
 
 function makeError(message, status, code) {
   const err = new Error(message);
@@ -164,6 +165,16 @@ async function confirmBillEvent({ billId, items, confirmedByUserId }) {
         { productId, changeQty, scanEventId: null },
         client
       );
+
+      // Record the price this item was bought at, using the price captured at upload
+      // time (lineItem.unit_price) — same transaction as the stock change, so price
+      // and stock history never drift apart from each other.
+      await pricingService.recordPrice({
+        productId,
+        newPrice: lineItem.unit_price,
+        billId,
+        client,
+      });
 
       await billsModel.updateBillLineItem(item.id, { confirmedQty: item.qty, confirmed: true }, client);
     }

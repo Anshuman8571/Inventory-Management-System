@@ -1,4 +1,5 @@
-// Renders the Inventory Dashboard to view all products and their current quantities.
+// Renders the Inventory Dashboard to view all products, their current quantities,
+// and last known purchase price (from the bill flow's price tracking).
 
 async function renderDashboard(container) {
   container.innerHTML = `
@@ -35,6 +36,7 @@ async function renderDashboard(container) {
             <th style="padding: 10px;">Size</th>
             <th style="padding: 10px;">Type</th>
             <th style="padding: 10px;">Company</th>
+            <th style="padding: 10px; text-align: right;">Last Price</th>
             <th style="padding: 10px; text-align: right;">Current Qty</th>
           </tr>
         </thead>
@@ -44,6 +46,7 @@ async function renderDashboard(container) {
     products.forEach(p => {
       const isLowStock = p.low_stock_at && p.current_qty <= p.low_stock_at;
       const rowStyle = isLowStock ? 'background-color: #fdf5e6;' : ''; // Warning color for low stock
+      const priceDisplay = p.last_known_price != null ? `₹${p.last_known_price}` : '-';
       
       tableHtml += `
         <tr style="border-bottom: 1px solid #eee; ${rowStyle}">
@@ -52,6 +55,7 @@ async function renderDashboard(container) {
           <td style="padding: 10px;">${p.attributes?.size || '-'}</td>
           <td style="padding: 10px;">${p.attributes?.type || '-'}</td>
           <td style="padding: 10px;">${p.company || '-'}</td>
+          <td style="padding: 10px; text-align: right; font-variant-numeric: tabular-nums;">${priceDisplay}</td>
           <td style="padding: 10px; text-align: right; font-weight: bold; font-variant-numeric: tabular-nums;">
             ${p.current_qty} ${p.unit}
             ${isLowStock ? ' ⚠️' : ''}

@@ -9,11 +9,11 @@ function runner(client) {
 }
 
 async function findByCategory(category, client) {
-  const query = category 
+  const query = category
     ? 'SELECT id, name, company, unit, current_qty, attributes FROM products WHERE category = $1'
     : 'SELECT id, name, company, unit, current_qty, attributes FROM products';
   const params = category ? [category] : [];
-  
+
   const result = await runner(client).query(query, params);
   return result.rows;
 }
@@ -43,11 +43,21 @@ async function incrementQty(id, delta, client) {
   return result.rows[0];
 }
 
+// The only function that should ever change last_known_price — called from
+// pricing.service.js during bill confirmation.
+async function updatePrice(id, price, client) {
+  const result = await runner(client).query(
+    `UPDATE products SET last_known_price = $1 WHERE id = $2 RETURNING *`,
+    [price, id]
+  );
+  return result.rows[0];
+}
+
 async function list(client) {
   const result = await runner(client).query(
-    'SELECT id, category, name, company, unit, current_qty, low_stock_at, attributes FROM products ORDER BY category, name'
+    'SELECT id, category, name, company, unit, current_qty, last_known_price, low_stock_at, attributes FROM products ORDER BY category, name'
   );
   return result.rows;
 }
 
-module.exports = { findByCategory, findById, create, incrementQty, list };
+module.exports = { findByCategory, findById, create, incrementQty, updatePrice, list };

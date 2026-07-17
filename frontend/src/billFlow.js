@@ -1,19 +1,39 @@
 // Handles Phase 4: Bulk bill processing flow
 
 function startBillFlow(container) {
-  captureAndScanBill(container);
+  renderBillCaptureChoice(container);
 }
 
-async function captureAndScanBill(container) {
-  container.innerHTML = `<p class="muted">Opening camera for bill scan...</p>`;
+// Same Camera-vs-Gallery choice as scan.js, for the same reason (see camera.js).
+function renderBillCaptureChoice(container) {
+  container.innerHTML = `
+    <h1 class="title">Photograph Supplier Bill</h1>
+    <div class="category-grid">
+      <button type="button" class="btn-category" id="bill-capture-camera-btn">📷 Take Photo</button>
+      <button type="button" class="btn-category" id="bill-capture-gallery-btn">🖼️ Choose from Gallery</button>
+    </div>
+    <button type="button" class="btn-secondary" id="bill-capture-back-btn">Back</button>
+  `;
+
+  document
+    .getElementById('bill-capture-camera-btn')
+    .addEventListener('click', () => captureAndScanBill(container, true));
+  document
+    .getElementById('bill-capture-gallery-btn')
+    .addEventListener('click', () => captureAndScanBill(container, false));
+  document.getElementById('bill-capture-back-btn').addEventListener('click', () => {
+    if (window.renderHomeScreen) window.renderHomeScreen(container);
+  });
+}
+
+async function captureAndScanBill(container, useCamera) {
+  container.innerHTML = `<p class="muted">Opening ${useCamera ? 'camera' : 'gallery'}...</p>`;
 
   let photo;
   try {
-    photo = await window.capturePhoto();
+    photo = await window.capturePhoto({ useCamera });
   } catch (e) {
-    if (window.renderHomeScreen) {
-      window.renderHomeScreen(container);
-    }
+    renderBillCaptureChoice(container);
     return;
   }
 
@@ -34,7 +54,7 @@ async function captureAndScanBill(container) {
       <button type="button" class="btn-primary" id="retry-btn">Try Again</button>
       <button type="button" class="btn-secondary" id="cancel-btn" style="margin-top: 10px;">Cancel</button>
     `;
-    document.getElementById('retry-btn').addEventListener('click', () => captureAndScanBill(container));
+    document.getElementById('retry-btn').addEventListener('click', () => captureAndScanBill(container, useCamera));
     document.getElementById('cancel-btn').addEventListener('click', () => {
       if (window.renderHomeScreen) window.renderHomeScreen(container);
     });
@@ -46,7 +66,7 @@ async function captureAndScanBill(container) {
 
 function renderBillTable(container, billResult) {
   const { billId, supplierName, items } = billResult;
-  
+
   if (!items || items.length === 0) {
     container.innerHTML = `
       <div class="status-card status-warning">
@@ -55,7 +75,7 @@ function renderBillTable(container, billResult) {
       <button type="button" class="btn-primary" id="retry-btn">Try Again</button>
       <button type="button" class="btn-secondary" id="cancel-btn">Cancel</button>
     `;
-    document.getElementById('retry-btn').addEventListener('click', () => captureAndScanBill(container));
+    document.getElementById('retry-btn').addEventListener('click', () => renderBillCaptureChoice(container));
     document.getElementById('cancel-btn').addEventListener('click', () => {
       if (window.renderHomeScreen) window.renderHomeScreen(container);
     });
@@ -69,6 +89,7 @@ function renderBillTable(container, billResult) {
     const name = item.match ? item.match.name : (item.rawExtracted.name || '');
     const statusText = isNew ? 'NEW' : 'MATCH';
     const statusClass = isNew ? 'status-warning' : 'status-success';
+    const priceHtml = renderPriceInfo(item.priceInfo);
 
     return `
       <div class="bill-row" data-index="${index}" style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; border-radius: 4px;">
@@ -76,10 +97,10 @@ function renderBillTable(container, billResult) {
           <span class="${statusClass}" style="padding: 2px 6px; font-size: 12px; border-radius: 4px;">${statusText}</span>
           ${!isNew ? `<span style="font-size: 12px; color: #666;">Current: ${item.match.currentQty}</span>` : ''}
         </div>
-        
+
         <label>Product Name</label>
         <input type="text" class="row-name" value="${escapeHtml(name)}" ${!isNew ? 'readonly' : ''} />
-        
+
         ${isNew ? `
           <label>Category</label>
           <select class="row-category">
@@ -88,9 +109,11 @@ function renderBillTable(container, billResult) {
             <option value="Paint">Paint</option>
           </select>
         ` : ''}
-        
+
         <label>Quantity</label>
         <input type="number" class="row-qty" value="${qty}" min="1" inputmode="numeric" />
+
+        ${priceHtml}
       </div>
     `;
   }).join('');
@@ -98,7 +121,7 @@ function renderBillTable(container, billResult) {
   container.innerHTML = `
     <h2 class="title">Review Bill</h2>
     <p class="muted" style="margin-bottom: 15px;">Supplier: <strong>${escapeHtml(supplierName || 'Unknown')}</strong></p>
-    
+
     <div id="bill-items-container">
       ${tableRows}
     </div>
@@ -122,7 +145,7 @@ function renderBillTable(container, billResult) {
 
     const confirmedItems = [];
     const rows = container.querySelectorAll('.bill-row');
-    
+
     for (const row of rows) {
       const idx = Number(row.dataset.index);
       const item = items[idx];
@@ -139,7 +162,7 @@ function renderBillTable(container, billResult) {
       if (item.isNewProduct) {
         const nameInput = row.querySelector('.row-name');
         const catSelect = row.querySelector('.row-category');
-        
+
         if (!nameInput.value.trim()) {
           errorEl.textContent = 'All new products must have a name.';
           errorEl.classList.add('visible');
@@ -178,6 +201,27 @@ function renderBillTable(container, billResult) {
       errorEl.classList.add('visible');
     }
   });
+}
+
+// Renders the price-comparison line for a bill row, if price info is available.
+function renderPriceInfo(priceInfo) {
+  if (!priceInfo || priceInfo.newPrice == null) {
+    return '<p class="muted" style="margin-top:6px;">No price detected on this line.</p>';
+  }
+  const { previousPrice, newPrice, changeType } = priceInfo;
+  if (changeType === 'first') {
+    return `<p class="muted" style="margin-top:6px;">Price: ₹${newPrice} (first time seeing this item)</p>`;
+  }
+  if (changeType === 'same') {
+    return `<p class="muted" style="margin-top:6px;">Price: ₹${newPrice} (same as last time)</p>`;
+  }
+  if (changeType === 'increase') {
+    return `<p style="margin-top:6px; color: var(--color-warning, #C77B23);">⚠️ Price: ₹${newPrice} (up from ₹${previousPrice})</p>`;
+  }
+  if (changeType === 'decrease') {
+    return `<p style="margin-top:6px; color: var(--color-success, #2E7D5B);">Price: ₹${newPrice} (down from ₹${previousPrice})</p>`;
+  }
+  return `<p class="muted" style="margin-top:6px;">Price: ₹${newPrice}</p>`;
 }
 
 function showBillSuccess(container, count) {

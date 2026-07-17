@@ -1,6 +1,7 @@
 const extractionService = require('../services/extraction.service');
 const matchingService = require('../services/matching.service');
 const inventoryService = require('../services/inventory.service');
+const pricingService = require('../services/pricing.service');
 const billsModel = require('../models/bills.model');
 const { z } = require('zod');
 
@@ -58,17 +59,25 @@ async function uploadBill(req, res, next) {
         extractedName: item.name,
       });
 
+      // Compare against the matched product's last known price for display in the
+      // review table — nothing is persisted yet, that only happens on confirm.
+      const priceInfo = match
+        ? pricingService.compare(match.product.last_known_price, item.price)
+        : pricingService.compare(null, item.price);
+
       const lineItem = await billsModel.createBillLineItem({
         billId: bill.id,
         matchedProductId: match ? match.product.id : null,
         rawExtracted: item,
         isNewProduct: !match,
+        unitPrice: item.price ?? null,
       });
 
       processedItems.push({
         id: lineItem.id,
         rawExtracted: item,
         isNewProduct: !match,
+        priceInfo,
         match: match ? {
           productId: match.product.id,
           name: match.product.name,

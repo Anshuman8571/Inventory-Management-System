@@ -1,22 +1,47 @@
-// Orchestrates the Take-Out flow: category -> photo -> confirm -> done.
+// Orchestrates the Take-Out flow: category -> capture method -> photo -> confirm -> done.
 // Add-Stock via individual sticker (Phase 3) reuses this exact function with
 // flowType='add_stock' — no separate implementation (see architecture.md §5).
 
 function startScanFlow(container, { flowType = 'take_out' } = {}) {
   renderCategorySelect(container, (category) => {
-    captureAndScan(container, category, flowType);
+    renderCaptureChoice(container, category, flowType);
   });
 }
 
-async function captureAndScan(container, category, flowType) {
-  container.innerHTML = `<p class="muted">Opening camera...</p>`;
+// Lets the user pick Camera vs Gallery explicitly, rather than forcing one — see
+// camera.js for why both need to exist (Android low-memory issue with forced camera).
+function renderCaptureChoice(container, category, flowType) {
+  container.innerHTML = `
+    <h1 class="title">Take Photo of Sticker</h1>
+    <div class="category-grid">
+      <button type="button" class="btn-category" id="capture-camera-btn">📷 Take Photo</button>
+      <button type="button" class="btn-category" id="capture-gallery-btn">🖼️ Choose from Gallery</button>
+    </div>
+    <button type="button" class="btn-secondary" id="capture-back-btn">Back</button>
+  `;
+
+  document
+    .getElementById('capture-camera-btn')
+    .addEventListener('click', () => captureAndScan(container, category, flowType, true));
+  document
+    .getElementById('capture-gallery-btn')
+    .addEventListener('click', () => captureAndScan(container, category, flowType, false));
+  document
+    .getElementById('capture-back-btn')
+    .addEventListener('click', () =>
+      renderCategorySelect(container, (c) => renderCaptureChoice(container, c, flowType))
+    );
+}
+
+async function captureAndScan(container, category, flowType, useCamera) {
+  container.innerHTML = `<p class="muted">Opening ${useCamera ? 'camera' : 'gallery'}...</p>`;
 
   let photo;
   try {
-    photo = await window.capturePhoto();
+    photo = await window.capturePhoto({ useCamera });
   } catch (e) {
-    // User cancelled or camera failed — just go back to category select, no error needed.
-    renderCategorySelect(container, (c) => captureAndScan(container, c, flowType));
+    // User cancelled or capture failed — go back to the method-choice screen, no error needed.
+    renderCaptureChoice(container, category, flowType);
     return;
   }
 
@@ -41,14 +66,14 @@ async function captureAndScan(container, category, flowType) {
     `;
     document
       .getElementById('retry-btn')
-      .addEventListener('click', () => captureAndScan(container, category, flowType));
+      .addEventListener('click', () => captureAndScan(container, category, flowType, useCamera));
     document
       .getElementById('manual-btn')
       .addEventListener('click', () => doManualEntry(container, category, flowType));
     return;
   }
 
-  showConfirm(container, scanResult, category, flowType);
+  showConfirm(container, scanResult, category, flowType, useCamera);
 }
 
 async function doManualEntry(container, category, flowType) {
@@ -58,19 +83,19 @@ async function doManualEntry(container, category, flowType) {
       method: 'POST',
       body: { category, flowType, isManual: true },
     });
-    showConfirm(container, scanResult, category, flowType);
+    showConfirm(container, scanResult, category, flowType, false);
   } catch (err) {
     container.innerHTML = `<p class="error-text visible">Failed to start manual entry: ${err.message}</p>`;
   }
 }
 
-function showConfirm(container, scanResult, category, flowType) {
+function showConfirm(container, scanResult, category, flowType, useCamera) {
   renderConfirmCard(container, {
     extracted: scanResult.extracted,
     isNewProduct: scanResult.isNewProduct,
     match: scanResult.match,
     category, // needed so confirmCard.js can offer "select an existing product" scoped correctly
-    onRetake: () => captureAndScan(container, category, flowType),
+    onRetake: () => captureAndScan(container, category, flowType, useCamera),
     onConfirm: async ({ qty, newProductDetails, selectedProductId }) => {
       try {
         await window.api.apiRequest(`/scan/${scanResult.scanEventId}/confirm`, {

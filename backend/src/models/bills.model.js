@@ -9,14 +9,14 @@ async function createBill({ uploadedByUserId, supplierName }, client = db) {
 }
 
 async function createBillLineItem(
-  { billId, matchedProductId, rawExtracted, isNewProduct },
+  { billId, matchedProductId, rawExtracted, isNewProduct, unitPrice },
   client = db
 ) {
   const result = await client.query(
     `INSERT INTO bill_line_items 
-      (bill_id, matched_product_id, raw_extracted, is_new_product) 
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [billId, matchedProductId, rawExtracted, isNewProduct]
+      (bill_id, matched_product_id, raw_extracted, is_new_product, unit_price) 
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [billId, matchedProductId, rawExtracted, isNewProduct, unitPrice ?? null]
   );
   return result.rows[0];
 }

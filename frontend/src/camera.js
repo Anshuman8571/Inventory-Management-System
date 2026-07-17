@@ -1,17 +1,19 @@
-// Shared photo-capture helper — used by every photo-based flow (sticker scans now,
-// bill photos later). Uses a native file input rather than raw getUserMedia, since it
-// works without extra permissions UI to build ourselves and needs no HTTPS (getUserMedia
+// Shared photo-capture helper — used by every photo-based flow (sticker scans, bill
+// photos). Uses a native file input rather than raw getUserMedia, since it works
+// without extra permissions UI to build ourselves and needs no HTTPS (getUserMedia
 // requires a secure context; a plain file input does not).
 //
-// Deliberately NOT setting input.capture = 'environment' — forcing a direct camera-app
-// handoff via that attribute is known to fail with a native "low memory" error on some
-// Android devices/browsers when the browser process gets suspended while the camera app
-// is open. Leaving capture unset lets the OS show its normal picker (Camera / Gallery /
-// Files), which is more stable across devices — the user just taps "Camera" from there.
+// Supports two modes:
+// - useCamera: true  -> sets capture="environment", opening the camera app directly.
+// - useCamera: false -> plain file picker (Gallery/Files), no camera hint.
+//
+// Why both exist: forcing the camera hint on every capture caused a native "low memory"
+// crash on some Android devices when the browser process got suspended while the camera
+// app was open — so it was removed entirely. But without the hint, some browsers/devices
+// don't surface a "Camera" option in the plain picker at all, only Gallery/Files. Offering
+// both as an explicit choice restores camera access without forcing it on devices where
+// it's flaky — if the camera path misbehaves again, Gallery still works as a fallback.
 
-// Resize/compress before sending — helps avoid memory pressure holding a full-resolution
-// phone photo (often 8-12MP) in memory, and keeps the AI extraction call cheaper/faster
-// (see rules.md, token/cost efficiency rules). 1600px is plenty for reading sticker text.
 const MAX_DIMENSION = 1600;
 const JPEG_QUALITY = 0.8;
 
@@ -53,11 +55,14 @@ function resizeImage(file) {
   });
 }
 
-function capturePhoto() {
+function capturePhoto({ useCamera = false } = {}) {
   return new Promise((resolve, reject) => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
+    if (useCamera) {
+      input.capture = 'environment';
+    }
 
     input.onchange = () => {
       const file = input.files && input.files[0];
