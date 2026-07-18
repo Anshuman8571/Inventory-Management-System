@@ -13,6 +13,18 @@ function setToken(token) {
 
 function clearToken() {
   localStorage.removeItem('token');
+  localStorage.removeItem('role');
+}
+
+// Stored alongside the token purely for UI decisions (e.g. showing/hiding the Reports
+// button) — actual access control is always enforced server-side via requireRole, this
+// is just so the UI doesn't show buttons a user's role can't use.
+function getRole() {
+  return localStorage.getItem('role');
+}
+
+function setRole(role) {
+  localStorage.setItem('role', role);
 }
 
 async function apiRequest(path, { method = 'GET', body } = {}) {
@@ -42,4 +54,4 @@ async function apiRequest(path, { method = 'GET', body } = {}) {
   return data;
 }
 
-window.api = { apiRequest, getToken, setToken, clearToken };
+window.api = { apiRequest, getToken, setToken, clearToken, getRole, setRole };

@@ -20,6 +20,7 @@
     if (!window.api.getToken()) return;
     try {
       const { user } = await window.api.apiRequest('/auth/me');
+      window.api.setRole(user.role);
       redirectForRole(user.role);
     } catch (e) {
       // Token invalid/expired — clear it and let the user log in again.
@@ -28,12 +29,12 @@
   }
 
   // This is a single-page app (see architecture.md) — screens swap in place rather
-  // than navigating to separate HTML files. Owner view (Phase 6) will branch here too;
-  // for now both roles land on the same Take-Out scan flow.
+  // than navigating to separate HTML files. Role is passed through so the home menu
+  // can show/hide owner-only items (e.g. Reports) without a separate owner screen.
   function redirectForRole(role) {
     const card = document.querySelector('.card');
     if (window.renderHomeScreen) {
-      window.renderHomeScreen(card);
+      window.renderHomeScreen(card, role);
     } else {
       window.startScanFlow(card, { flowType: 'take_out' });
     }
@@ -52,6 +53,7 @@
         body: { username, password },
       });
       window.api.setToken(token);
+      window.api.setRole(user.role);
       redirectForRole(user.role);
     } catch (err) {
       showError(err.message || 'Login failed. Please try again.');
