@@ -7,6 +7,7 @@ function startBillFlow(container) {
 // Same Camera-vs-Gallery choice as scan.js, for the same reason (see camera.js).
 function renderBillCaptureChoice(container) {
   container.innerHTML = `
+    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
     <h1 class="title">Photograph Supplier Bill</h1>
     <div class="category-grid">
       <button type="button" class="btn-category" id="bill-capture-camera-btn">📷 Take Photo</button>
@@ -15,6 +16,8 @@ function renderBillCaptureChoice(container) {
     <button type="button" class="btn-secondary" id="bill-capture-back-btn">Back</button>
   `;
 
+  if (window.attachHomeButton) window.attachHomeButton(container);
+
   document
     .getElementById('bill-capture-camera-btn')
     .addEventListener('click', () => captureAndScanBill(container, true));
@@ -22,12 +25,21 @@ function renderBillCaptureChoice(container) {
     .getElementById('bill-capture-gallery-btn')
     .addEventListener('click', () => captureAndScanBill(container, false));
   document.getElementById('bill-capture-back-btn').addEventListener('click', () => {
-    if (window.renderHomeScreen) window.renderHomeScreen(container);
+    goHome(container);
   });
 }
 
+function goHome(container) {
+  const role = window.api.getRole();
+  if (window.renderHomeScreen) window.renderHomeScreen(container, role);
+}
+
 async function captureAndScanBill(container, useCamera) {
-  container.innerHTML = `<p class="muted">Opening ${useCamera ? 'camera' : 'gallery'}...</p>`;
+  container.innerHTML = `
+    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
+    <p class="muted">Opening ${useCamera ? 'camera' : 'gallery'}...</p>
+  `;
+  if (window.attachHomeButton) window.attachHomeButton(container);
 
   let photo;
   try {
@@ -37,7 +49,11 @@ async function captureAndScanBill(container, useCamera) {
     return;
   }
 
-  container.innerHTML = `<p class="muted">Reading supplier bill... this may take a few moments...</p>`;
+  container.innerHTML = `
+    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
+    <p class="muted">Reading supplier bill... this may take a few moments...</p>
+  `;
+  if (window.attachHomeButton) window.attachHomeButton(container);
 
   let billResult;
   try {
@@ -50,14 +66,14 @@ async function captureAndScanBill(container, useCamera) {
     });
   } catch (err) {
     container.innerHTML = `
+      ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
       <p class="error-text visible">${err.message}</p>
       <button type="button" class="btn-primary" id="retry-btn">Try Again</button>
       <button type="button" class="btn-secondary" id="cancel-btn" style="margin-top: 10px;">Cancel</button>
     `;
+    if (window.attachHomeButton) window.attachHomeButton(container);
     document.getElementById('retry-btn').addEventListener('click', () => captureAndScanBill(container, useCamera));
-    document.getElementById('cancel-btn').addEventListener('click', () => {
-      if (window.renderHomeScreen) window.renderHomeScreen(container);
-    });
+    document.getElementById('cancel-btn').addEventListener('click', () => goHome(container));
     return;
   }
 
@@ -69,20 +85,19 @@ function renderBillTable(container, billResult) {
 
   if (!items || items.length === 0) {
     container.innerHTML = `
+      ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
       <div class="status-card status-warning">
         <p class="status-label">No items found on this bill.</p>
       </div>
       <button type="button" class="btn-primary" id="retry-btn">Try Again</button>
       <button type="button" class="btn-secondary" id="cancel-btn">Cancel</button>
     `;
+    if (window.attachHomeButton) window.attachHomeButton(container);
     document.getElementById('retry-btn').addEventListener('click', () => renderBillCaptureChoice(container));
-    document.getElementById('cancel-btn').addEventListener('click', () => {
-      if (window.renderHomeScreen) window.renderHomeScreen(container);
-    });
+    document.getElementById('cancel-btn').addEventListener('click', () => goHome(container));
     return;
   }
 
-  // Build the table
   let tableRows = items.map((item, index) => {
     const isNew = item.isNewProduct;
     const qty = item.rawExtracted.qty || 1;
@@ -119,6 +134,7 @@ function renderBillTable(container, billResult) {
   }).join('');
 
   container.innerHTML = `
+    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
     <h2 class="title">Review Bill</h2>
     <p class="muted" style="margin-bottom: 15px;">Supplier: <strong>${escapeHtml(supplierName || 'Unknown')}</strong></p>
 
@@ -134,11 +150,13 @@ function renderBillTable(container, billResult) {
     </div>
   `;
 
-  document.getElementById('cancel-btn').addEventListener('click', () => {
-    if (window.renderHomeScreen) window.renderHomeScreen(container);
-  });
+  if (window.attachHomeButton) window.attachHomeButton(container);
 
-  document.getElementById('confirm-bill-btn').addEventListener('click', async () => {
+  document.getElementById('cancel-btn').addEventListener('click', () => goHome(container));
+
+  const confirmBillBtn = document.getElementById('confirm-bill-btn');
+
+  confirmBillBtn.addEventListener('click', async () => {
     const errorEl = document.getElementById('bill-error');
     errorEl.textContent = '';
     errorEl.classList.remove('visible');
@@ -189,7 +207,11 @@ function renderBillTable(container, billResult) {
       });
     }
 
-    // Submit
+    // Disable + relabel while submitting — prevents double-tapping this into applying
+    // the same bill's stock changes twice on a slow connection.
+    confirmBillBtn.disabled = true;
+    confirmBillBtn.textContent = 'Confirming...';
+
     try {
       const result = await window.api.apiRequest(`/bills/${billId}/confirm`, {
         method: 'POST',
@@ -199,6 +221,8 @@ function renderBillTable(container, billResult) {
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.classList.add('visible');
+      confirmBillBtn.disabled = false;
+      confirmBillBtn.textContent = 'Confirm All Items';
     }
   });
 }
@@ -226,15 +250,22 @@ function renderPriceInfo(priceInfo) {
 
 function showBillSuccess(container, count) {
   container.innerHTML = `
+    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
     <div class="status-card status-success">
       <p class="status-label">✅ Success</p>
       <p class="muted">Added ${count} items to inventory.</p>
     </div>
-    <button type="button" class="btn-primary" id="back-home-btn" style="margin-top:20px;">Back to Menu</button>
+    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
+      <button type="button" class="btn-primary" id="view-inventory-btn-bill">View Inventory</button>
+      <button type="button" class="btn-secondary" id="back-home-btn">Go to Home</button>
+    </div>
   `;
-  document.getElementById('back-home-btn').addEventListener('click', () => {
-    if (window.renderHomeScreen) window.renderHomeScreen(container);
+  if (window.attachHomeButton) window.attachHomeButton(container);
+
+  document.getElementById('view-inventory-btn-bill').addEventListener('click', () => {
+    if (window.renderDashboard) window.renderDashboard(container);
   });
+  document.getElementById('back-home-btn').addEventListener('click', () => goHome(container));
 }
 
 function escapeHtml(str) {

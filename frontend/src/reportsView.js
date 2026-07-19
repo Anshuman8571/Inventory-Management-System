@@ -2,20 +2,22 @@
 // recent price changes. Read-only, no confirmation flows here — just visibility.
 
 async function renderReports(container, { days = 30 } = {}) {
-  container.innerHTML = `<p class="muted">Loading reports...</p>`;
+  container.innerHTML = `
+    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
+    <p class="muted">Loading reports...</p>
+  `;
+  if (window.attachHomeButton) window.attachHomeButton(container);
 
   let data;
   try {
     data = await window.api.apiRequest(`/reports/summary?days=${days}`);
   } catch (err) {
     container.innerHTML = `
+      ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
       <h1 class="title">Reports</h1>
       <p class="error-text visible">${err.message}</p>
-      <button type="button" class="btn-secondary" id="reports-back-btn">Back to Menu</button>
     `;
-    document.getElementById('reports-back-btn').addEventListener('click', () => {
-      if (window.renderHomeScreen) window.renderHomeScreen(container);
-    });
+    if (window.attachHomeButton) window.attachHomeButton(container);
     return;
   }
 
@@ -66,6 +68,7 @@ async function renderReports(container, { days = 30 } = {}) {
         .join('');
 
   container.innerHTML = `
+    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
     <h1 class="title">Reports</h1>
 
     <h2 style="font-size: 16px; margin-top: 20px;">Total Stock Value</h2>
@@ -84,16 +87,12 @@ async function renderReports(container, { days = 30 } = {}) {
 
     <h2 style="font-size: 16px; margin-top: 24px;">Recent Price Changes</h2>
     <div style="margin-top: 8px;">${priceChangeRows}</div>
-
-    <button type="button" class="btn-secondary" id="reports-back-btn" style="margin-top: 24px;">Back to Menu</button>
   `;
+
+  if (window.attachHomeButton) window.attachHomeButton(container);
 
   document.getElementById('days-select').addEventListener('change', (e) => {
     renderReports(container, { days: Number(e.target.value) });
-  });
-
-  document.getElementById('reports-back-btn').addEventListener('click', () => {
-    if (window.renderHomeScreen) window.renderHomeScreen(container);
   });
 }
 

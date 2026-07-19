@@ -33,6 +33,7 @@ async function renderConfirmCard(
     .join('');
 
   container.innerHTML = `
+    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
     <div class="status-card ${statusClass}">
       <p class="status-label">${statusLabel}</p>
       ${!isNewProduct ? `<p class="muted">Current stock: ${match.currentQty}</p>` : ''}
@@ -76,6 +77,8 @@ async function renderConfirmCard(
     <button type="button" class="btn-secondary" id="retake-btn">Retake Photo</button>
   `;
 
+  if (window.attachHomeButton) window.attachHomeButton(container);
+
   document.getElementById('retake-btn').addEventListener('click', onRetake);
 
   const existingSelect = document.getElementById('existing-product-select');
@@ -87,7 +90,9 @@ async function renderConfirmCard(
     });
   }
 
-  document.getElementById('confirm-btn').addEventListener('click', () => {
+  const confirmBtn = document.getElementById('confirm-btn');
+
+  confirmBtn.addEventListener('click', async () => {
     const errorEl = document.getElementById('confirm-error');
     errorEl.textContent = '';
     errorEl.classList.remove('visible');
@@ -117,7 +122,19 @@ async function renderConfirmCard(
       };
     }
 
-    onConfirm({ qty, newProductDetails, selectedProductId });
+    // Disable + relabel while submitting so a slow connection can't be double-tapped
+    // into confirming the same thing twice.
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Confirming...';
+
+    try {
+      await onConfirm({ qty, newProductDetails, selectedProductId });
+    } catch (err) {
+      errorEl.textContent = err.message || 'Something went wrong. Please try again.';
+      errorEl.classList.add('visible');
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Confirm';
+    }
   });
 }
 

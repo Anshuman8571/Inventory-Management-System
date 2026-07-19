@@ -1,30 +1,25 @@
 // Renders the Inventory Dashboard to view all products, their current quantities,
 // last known purchase price, and (via the History button) each product's full
-// movement + price timeline — the last piece of Phase 6.
+// movement + price timeline.
 
 async function renderDashboard(container) {
   container.innerHTML = `
+    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
     <h1 class="title">Inventory Dashboard</h1>
     <p class="muted">Loading inventory...</p>
-    <button type="button" class="btn-secondary" id="back-btn" style="margin-top: 20px;">Back to Scanning</button>
   `;
-
-  document.getElementById('back-btn').addEventListener('click', () => {
-    window.startScanFlow(container, { flowType: 'take_out' });
-  });
+  if (window.attachHomeButton) window.attachHomeButton(container);
 
   try {
     const { products } = await window.api.apiRequest('/products');
 
     if (products.length === 0) {
       container.innerHTML = `
+        ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
         <h1 class="title">Inventory Dashboard</h1>
         <p class="muted">No products found in inventory.</p>
-        <button type="button" class="btn-secondary" id="back-btn" style="margin-top: 20px;">Back to Scanning</button>
       `;
-      document.getElementById('back-btn').addEventListener('click', () => {
-        window.startScanFlow(container, { flowType: 'take_out' });
-      });
+      if (window.attachHomeButton) window.attachHomeButton(container);
       return;
     }
 
@@ -75,16 +70,13 @@ async function renderDashboard(container) {
     `;
 
     container.innerHTML = `
+      ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
       <h1 class="title">Inventory Dashboard</h1>
       <div style="overflow-x: auto;">
         ${tableHtml}
       </div>
-      <button type="button" class="btn-secondary" id="back-btn" style="margin-top: 20px;">Back to Scanning</button>
     `;
-
-    document.getElementById('back-btn').addEventListener('click', () => {
-      window.startScanFlow(container, { flowType: 'take_out' });
-    });
+    if (window.attachHomeButton) window.attachHomeButton(container);
 
     container.querySelectorAll('.history-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -94,13 +86,11 @@ async function renderDashboard(container) {
 
   } catch (err) {
     container.innerHTML = `
+      ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
       <h1 class="title">Inventory Dashboard</h1>
       <p class="error-text visible">Failed to load inventory: ${err.message}</p>
-      <button type="button" class="btn-secondary" id="back-btn" style="margin-top: 20px;">Back to Scanning</button>
     `;
-    document.getElementById('back-btn').addEventListener('click', () => {
-      window.startScanFlow(container, { flowType: 'take_out' });
-    });
+    if (window.attachHomeButton) window.attachHomeButton(container);
   }
 }
 
@@ -108,23 +98,28 @@ async function renderDashboard(container) {
 // bought at, merged into a single chronological list so the owner can see the
 // whole story of a product at a glance rather than two disconnected tables.
 async function renderProductHistory(container, productId, productName) {
-  container.innerHTML = `<p class="muted">Loading history for ${escapeHtmlLocal(productName)}...</p>`;
+  container.innerHTML = `
+    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
+    <p class="muted">Loading history for ${escapeHtmlLocal(productName)}...</p>
+  `;
+  if (window.attachHomeButton) window.attachHomeButton(container);
 
   let data;
   try {
     data = await window.api.apiRequest(`/products/${productId}/history`);
   } catch (err) {
     container.innerHTML = `
+      ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
       <p class="error-text visible">${err.message}</p>
       <button type="button" class="btn-secondary" id="history-back-btn">Back to Dashboard</button>
     `;
+    if (window.attachHomeButton) window.attachHomeButton(container);
     document.getElementById('history-back-btn').addEventListener('click', () => renderDashboard(container));
     return;
   }
 
   const { product, movements, priceHistory } = data;
 
-  // Merge movements and price entries into one timeline, sorted newest first.
   const events = [
     ...movements.map((m) => ({
       type: 'movement',
@@ -164,6 +159,7 @@ async function renderProductHistory(container, productId, productName) {
       }).join('');
 
   container.innerHTML = `
+    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
     <h1 class="title">${escapeHtmlLocal(product.name)}</h1>
     <p class="muted">Current stock: ${product.current_qty} ${product.unit} · Last price: ${product.last_known_price != null ? `₹${product.last_known_price}` : '-'}</p>
     <div style="margin-top: 16px; border-top: 2px solid #ccc;">
@@ -171,6 +167,7 @@ async function renderProductHistory(container, productId, productName) {
     </div>
     <button type="button" class="btn-secondary" id="history-back-btn" style="margin-top: 20px;">Back to Dashboard</button>
   `;
+  if (window.attachHomeButton) window.attachHomeButton(container);
   document.getElementById('history-back-btn').addEventListener('click', () => renderDashboard(container));
 }
 
