@@ -4,7 +4,9 @@
 
 function startScanFlow(container, { flowType = 'take_out' } = {}) {
   renderCategorySelect(container, (category) => {
-    renderCaptureChoice(container, category, flowType);
+    window.Nav.push(renderCaptureChoice, [container, category, flowType], {
+      title: 'Choose Photo',
+    });
   });
 }
 
@@ -12,16 +14,12 @@ function startScanFlow(container, { flowType = 'take_out' } = {}) {
 // camera.js for why both need to exist (Android low-memory issue with forced camera).
 function renderCaptureChoice(container, category, flowType) {
   container.innerHTML = `
-    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
     <h1 class="title">Take Photo of Sticker</h1>
     <div class="category-grid">
       <button type="button" class="btn-category" id="capture-camera-btn">📷 Take Photo</button>
       <button type="button" class="btn-category" id="capture-gallery-btn">🖼️ Choose from Gallery</button>
     </div>
-    <button type="button" class="btn-secondary" id="capture-back-btn">Back</button>
   `;
-
-  if (window.attachHomeButton) window.attachHomeButton(container);
 
   document
     .getElementById('capture-camera-btn')
@@ -29,19 +27,10 @@ function renderCaptureChoice(container, category, flowType) {
   document
     .getElementById('capture-gallery-btn')
     .addEventListener('click', () => captureAndScan(container, category, flowType, false));
-  document
-    .getElementById('capture-back-btn')
-    .addEventListener('click', () =>
-      renderCategorySelect(container, (c) => renderCaptureChoice(container, c, flowType))
-    );
 }
 
 async function captureAndScan(container, category, flowType, useCamera) {
-  container.innerHTML = `
-    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
-    <p class="muted">Opening ${useCamera ? 'camera' : 'gallery'}...</p>
-  `;
-  if (window.attachHomeButton) window.attachHomeButton(container);
+  container.innerHTML = `<p class="muted">Opening ${useCamera ? 'camera' : 'gallery'}...</p>`;
 
   let photo;
   try {
@@ -52,11 +41,16 @@ async function captureAndScan(container, category, flowType, useCamera) {
     return;
   }
 
-  container.innerHTML = `
-    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
-    <p class="muted">Reading sticker...</p>
-  `;
-  if (window.attachHomeButton) window.attachHomeButton(container);
+  // Show the photo before sending it anywhere — retaking here costs nothing,
+  // versus finding out after a round-trip to the reader that the shot was bad.
+  window.renderPhotoPreview(container, photo, {
+    onRetake: () => captureAndScan(container, category, flowType, useCamera),
+    onUsePhoto: () => submitScan(container, category, flowType, useCamera, photo),
+  });
+}
+
+async function submitScan(container, category, flowType, useCamera, photo) {
+  container.innerHTML = `<p class="muted">Reading sticker...</p>`;
 
   let scanResult;
   try {
@@ -71,12 +65,10 @@ async function captureAndScan(container, category, flowType, useCamera) {
     });
   } catch (err) {
     container.innerHTML = `
-      ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
       <p class="error-text visible">${err.message}</p>
       <button type="button" class="btn-primary" id="retry-btn">Try Again</button>
       <button type="button" class="btn-secondary" id="manual-btn" style="margin-top: 10px;">Enter Manually</button>
     `;
-    if (window.attachHomeButton) window.attachHomeButton(container);
     document
       .getElementById('retry-btn')
       .addEventListener('click', () => captureAndScan(container, category, flowType, useCamera));
@@ -86,28 +78,23 @@ async function captureAndScan(container, category, flowType, useCamera) {
     return;
   }
 
-  showConfirm(container, scanResult, category, flowType, useCamera);
+  window.Nav.push(showConfirm, [container, scanResult, category, flowType, useCamera], {
+    title: 'Confirm',
+  });
 }
 
 async function doManualEntry(container, category, flowType) {
-  container.innerHTML = `
-    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
-    <p class="muted">Preparing manual entry...</p>
-  `;
-  if (window.attachHomeButton) window.attachHomeButton(container);
-
+  container.innerHTML = `<p class="muted">Preparing manual entry...</p>`;
   try {
     const scanResult = await window.api.apiRequest('/scan', {
       method: 'POST',
       body: { category, flowType, isManual: true },
     });
-    showConfirm(container, scanResult, category, flowType, false);
+    window.Nav.push(showConfirm, [container, scanResult, category, flowType, false], {
+      title: 'Confirm',
+    });
   } catch (err) {
-    container.innerHTML = `
-      ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
-      <p class="error-text visible">Failed to start manual entry: ${err.message}</p>
-    `;
-    if (window.attachHomeButton) window.attachHomeButton(container);
+    container.innerHTML = `<p class="error-text visible">Failed to start manual entry: ${err.message}</p>`;
   }
 }
 
@@ -119,49 +106,45 @@ function showConfirm(container, scanResult, category, flowType, useCamera) {
     category, // needed so confirmCard.js can offer "select an existing product" scoped correctly
     onRetake: () => captureAndScan(container, category, flowType, useCamera),
     onConfirm: async ({ qty, newProductDetails, selectedProductId }) => {
-      await window.api.apiRequest(`/scan/${scanResult.scanEventId}/confirm`, {
-        method: 'POST',
-        body: {
-          qty,
-          // If the user picked an existing product from the dropdown, this always
-          // targets that product directly, regardless of what the scan/manual-entry
-          // step originally flagged (see memory.md: manual entry duplicate-product fix).
-          isNewProduct: selectedProductId ? false : scanResult.isNewProduct,
-          newProductDetails:
-            !selectedProductId && scanResult.isNewProduct ? newProductDetails : undefined,
-          selectedProductId: selectedProductId || undefined,
-        },
-      });
-      showScanSuccess(container, flowType);
+      try {
+        await window.api.apiRequest(`/scan/${scanResult.scanEventId}/confirm`, {
+          method: 'POST',
+          body: {
+            qty,
+            // If the user picked an existing product from the dropdown, this always
+            // targets that product directly, regardless of what the scan/manual-entry
+            // step originally flagged (see memory.md: manual entry duplicate-product fix).
+            isNewProduct: selectedProductId ? false : scanResult.isNewProduct,
+            newProductDetails:
+              !selectedProductId && scanResult.isNewProduct ? newProductDetails : undefined,
+            selectedProductId: selectedProductId || undefined,
+          },
+        });
+        window.Nav.reset(showScanSuccess, [container, flowType], { title: 'Done' });
+      } catch (err) {
+        const errorEl = document.getElementById('confirm-error');
+        if (errorEl) {
+          errorEl.textContent = err.message;
+          errorEl.classList.add('visible');
+        }
+      }
     },
   });
 }
 
 function showScanSuccess(container, flowType) {
-  const role = window.api.getRole();
   container.innerHTML = `
-    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
     <div class="status-card status-success">
       <p class="status-label">✅ Updated</p>
     </div>
-    <div style="display: flex; flex-direction: column; gap: 12px;">
-      <button type="button" class="btn-primary" id="scan-next-btn">Scan Next Item</button>
-      <button type="button" class="btn-secondary" id="view-inventory-btn-success">View Inventory</button>
-      <button type="button" class="btn-secondary" id="go-home-btn-success">Go to Home</button>
-      <button type="button" class="btn-secondary" id="logout-btn-scan">Log Out</button>
-    </div>
+    <button type="button" class="btn-primary" id="scan-next-btn">Scan Next Item</button>
+    <button type="button" class="btn-secondary" id="logout-btn-scan">Log Out</button>
   `;
-  if (window.attachHomeButton) window.attachHomeButton(container);
-
   document
     .getElementById('scan-next-btn')
-    .addEventListener('click', () => startScanFlow(container, { flowType }));
-  document.getElementById('view-inventory-btn-success').addEventListener('click', () => {
-    if (window.renderDashboard) window.renderDashboard(container);
-  });
-  document.getElementById('go-home-btn-success').addEventListener('click', () => {
-    if (window.renderHomeScreen) window.renderHomeScreen(container, role);
-  });
+    .addEventListener('click', () =>
+      window.Nav.push(startScanFlow, [container, { flowType }], { title: 'Take-Out', showBack: false })
+    );
   document.getElementById('logout-btn-scan').addEventListener('click', () => {
     window.api.clearToken();
     window.location.reload();

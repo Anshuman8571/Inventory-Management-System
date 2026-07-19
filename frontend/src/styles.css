@@ -169,3 +169,213 @@ input:focus {
   margin: 0 0 4px 0;
   color: var(--color-text);
 }
+
+/* Persistent Back / Home header — added by nav.js above the content card.
+   Hidden entirely when neither icon applies (e.g. on Home itself). */
+.nav-header {
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  max-width: 360px;
+  height: 44px;
+  padding: 0 4px;
+  margin-bottom: 8px;
+}
+
+.nav-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--color-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+}
+
+.nav-icon-btn:active {
+  background: rgba(43, 76, 111, 0.1);
+}
+
+.nav-title {
+  flex: 1;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 8px;
+}
+
+/* Photo preview / retake screen (camera.js renderPhotoPreview) */
+.photo-preview-frame {
+  width: 100%;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid #DAD7CE;
+}
+
+.photo-preview-img {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+}
+
+/* Offline banner (offline.js) */
+.offline-banner {
+  display: none;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--color-warning);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Dashboard: search + quick filters */
+.dash-search {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  margin-top: 12px;
+  border: 1px solid #DAD7CE;
+  border-radius: 8px;
+  font-size: 15px;
+  font-family: var(--font-sans);
+}
+
+.quick-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chip-filter {
+  padding: 6px 12px;
+  border: 1px solid var(--color-primary);
+  background: transparent;
+  color: var(--color-primary);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chip-filter.active {
+  background: var(--color-primary);
+  color: white;
+}
+
+/* Dashboard: product card list (replaces the old wide table, which only "fit"
+   this app's fixed ~360px card via horizontal scrolling) */
+.product-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.product-card {
+  border: 1px solid #E5E2D9;
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--color-surface);
+}
+
+.product-card-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.product-card-name {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.product-card-meta {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.product-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #EFECE4;
+  font-variant-numeric: tabular-nums;
+}
+
+.product-card-qty {
+  font-weight: 700;
+}
+
+.product-card-price {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.status-chip {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-chip.chip-warning {
+  background: #FBF0E3;
+  color: var(--color-warning);
+}
+
+.status-chip.chip-critical {
+  background: #F7E7E7;
+  color: var(--color-error);
+}
+
+.trend-up {
+  color: var(--color-warning);
+  font-weight: 700;
+}
+
+.trend-down {
+  color: var(--color-success);
+  font-weight: 700;
+}
+
+/* Bill review: live totals summary */
+.bill-summary-card {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #F0EEE7;
+  border: 1px solid #DAD7CE;
+}
+
+.bill-summary-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  padding: 3px 0;
+}
+
+.bill-summary-row:first-child {
+  font-weight: 600;
+}

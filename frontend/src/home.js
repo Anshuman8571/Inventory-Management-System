@@ -15,31 +15,49 @@ function renderHomeScreen(container, role) {
   `;
 
   document.getElementById('home-take-out-btn').addEventListener('click', () => {
-    if (window.startScanFlow) window.startScanFlow(container, { flowType: 'take_out' });
+    if (window.startScanFlow) {
+      window.Nav.push(window.startScanFlow, [container, { flowType: 'take_out' }], {
+        title: 'Take-Out',
+      });
+    }
   });
 
   document.getElementById('home-add-stock-btn').addEventListener('click', () => {
-    if (window.startScanFlow) window.startScanFlow(container, { flowType: 'add_stock' });
+    if (window.startScanFlow) {
+      window.Nav.push(window.startScanFlow, [container, { flowType: 'add_stock' }], {
+        title: 'Add Stock',
+      });
+    }
   });
 
   document.getElementById('home-add-bill-btn').addEventListener('click', () => {
-    if (window.startBillFlow) window.startBillFlow(container);
-    else alert('Bill flow coming soon!');
+    if (window.startBillFlow) {
+      window.Nav.push(window.startBillFlow, [container], { title: 'Supplier Bill' });
+    } else {
+      alert('Bill flow coming soon!');
+    }
   });
 
   document.getElementById('home-manual-btn').addEventListener('click', () => {
     if (window.renderCategorySelect) {
-      window.renderCategorySelect(container, (category) => {
-        if (window.doManualEntry) {
-          window.doManualEntry(container, category, 'take_out'); // Defaults to take_out for manual, could prompt but take_out is safe default
-        }
-      });
+      window.Nav.push(
+        window.renderCategorySelect,
+        [
+          container,
+          (category) => {
+            if (window.doManualEntry) {
+              window.doManualEntry(container, category, 'take_out'); // Defaults to take_out for manual, could prompt but take_out is safe default
+            }
+          },
+        ],
+        { title: 'Manual Entry' }
+      );
     }
   });
 
   document.getElementById('view-inventory-btn').addEventListener('click', () => {
     if (window.renderDashboard) {
-      window.renderDashboard(container);
+      window.Nav.push(window.renderDashboard, [container], { title: 'Inventory Dashboard' });
     }
   });
 
@@ -47,7 +65,9 @@ function renderHomeScreen(container, role) {
     const reportsBtn = document.getElementById('view-reports-btn');
     if (reportsBtn) {
       reportsBtn.addEventListener('click', () => {
-        if (window.renderReports) window.renderReports(container);
+        if (window.renderReports) {
+          window.Nav.push(window.renderReports, [container], { title: 'Reports' });
+        }
       });
     }
   }

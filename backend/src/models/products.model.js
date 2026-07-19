@@ -53,9 +53,21 @@ async function updatePrice(id, price, client) {
   return result.rows[0];
 }
 
+// previous_price comes from a LATERAL join to price_history: the second-most-recent
+// price entry for each product (the one before last_known_price), so the frontend can
+// show a real up/down trend arrow instead of guessing from a single data point.
 async function list(client) {
   const result = await runner(client).query(
-    'SELECT id, category, name, company, unit, current_qty, last_known_price, low_stock_at, attributes FROM products ORDER BY category, name'
+    `SELECT p.id, p.category, p.name, p.company, p.unit, p.current_qty, p.last_known_price,
+            p.low_stock_at, p.attributes, ph.price AS previous_price
+     FROM products p
+     LEFT JOIN LATERAL (
+       SELECT price FROM price_history
+       WHERE product_id = p.id
+       ORDER BY recorded_at DESC
+       OFFSET 1 LIMIT 1
+     ) ph ON true
+     ORDER BY p.category, p.name`
   );
   return result.rows;
 }

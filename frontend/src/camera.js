@@ -7,12 +7,12 @@
 // - useCamera: true  -> sets capture="environment", opening the camera app directly.
 // - useCamera: false -> plain file picker (Gallery/Files), no camera hint.
 //
-// IMPORTANT FIX: previously, if the user opened the picker and tapped Cancel without
-// choosing a photo, nothing ever fired — the screen sat on "Opening camera..." forever,
-// with no way out except refreshing the page (this was likely the main cause of needing
-// to refresh to get back to Home). Modern browsers fire a 'cancel' event on the file
-// input when the picker is dismissed without a selection — listening for that now
-// rejects the promise properly so the UI can recover instead of hanging.
+// Why both exist: forcing the camera hint on every capture caused a native "low memory"
+// crash on some Android devices when the browser process got suspended while the camera
+// app was open — so it was removed entirely. But without the hint, some browsers/devices
+// don't surface a "Camera" option in the plain picker at all, only Gallery/Files. Offering
+// both as an explicit choice restores camera access without forcing it on devices where
+// it's flaky — if the camera path misbehaves again, Gallery still works as a fallback.
 
 const MAX_DIMENSION = 1600;
 const JPEG_QUALITY = 0.8;
@@ -63,51 +63,91 @@ function capturePhoto({ useCamera = false } = {}) {
     if (useCamera) {
       input.capture = 'environment';
     }
+    // Keep it out of the visible layout, but it MUST be attached to the document.
+    // A detached <input> that's only held in memory is what was causing the
+    // "Opening gallery..." screen to hang forever: opening the Gallery/Photos app
+    // backgrounds the browser tab for much longer than a direct Camera capture
+    // does, and on many Android browsers/WebViews an element that was never
+    // actually in the DOM gets its listeners dropped during that time — so
+    // `change` never fires and the promise never resolves or rejects.
+    input.style.position = 'fixed';
+    input.style.top = '-9999px';
+    input.style.left = '-9999px';
+    document.body.appendChild(input);
 
     let settled = false;
+
+    function cleanup() {
+      window.removeEventListener('focus', onWindowFocus);
+      if (input.parentNode) input.parentNode.removeChild(input);
+    }
+
+    function settleResolve(value) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(value);
+    }
+
+    function settleReject(err) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    }
 
     input.onchange = () => {
       const file = input.files && input.files[0];
       if (!file) {
-        if (!settled) {
-          settled = true;
-          reject(new Error('No photo captured.'));
-        }
+        settleReject(new Error('No photo selected.'));
         return;
       }
-      settled = true;
-      resizeImage(file).then(resolve).catch(reject);
+      resizeImage(file).then(settleResolve).catch(settleReject);
     };
 
-    // Fires when the user dismisses the picker without choosing anything (supported in
-    // current Chrome/Edge/Android WebView; harmless no-op on browsers that don't support
-    // it yet — see the fallback timer below for those cases).
-    input.addEventListener('cancel', () => {
-      if (!settled) {
-        settled = true;
-        reject(new Error('Photo selection was cancelled.'));
-      }
-    });
-
-    // Fallback safety net for browsers that don't fire 'cancel' at all: if focus returns
-    // to the page (picker closed, one way or another) and nothing was chosen after a
-    // short grace period, treat it as cancelled rather than hanging indefinitely.
-    window.addEventListener(
-      'focus',
-      function onFocusBack() {
-        window.removeEventListener('focus', onFocusBack);
-        setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            reject(new Error('Photo selection was cancelled.'));
-          }
-        }, 1000);
-      },
-      { once: true }
-    );
+    // Fallback for the case where the user opens Gallery/Camera and then cancels
+    // without picking anything — some browsers never fire `change` at all in that
+    // case, which would otherwise leave the screen hanging indefinitely just like
+    // the bug above. When the browser tab regains focus with nothing selected,
+    // treat it as a cancellation instead of waiting forever.
+    function onWindowFocus() {
+      setTimeout(() => {
+        if (!settled && (!input.files || input.files.length === 0)) {
+          settleReject(new Error('No photo selected.'));
+        }
+      }, 300);
+    }
+    window.addEventListener('focus', onWindowFocus);
 
     input.click();
   });
 }
 
+// Shows the photo the user just captured, before it's sent off for reading, so a
+// blurry/wrong/cut-off shot can be retaken with zero cost — no wasted API call, no
+// waiting to find out the read failed. This is the real equivalent of "immediate
+// visual feedback" for a photo-then-read flow (this app has no live/bounding-box
+// barcode scanning — see capturePhoto's comment above for why).
+//
+// photo is { mediaType, base64 } as returned by capturePhoto/resizeImage.
+function renderPhotoPreview(container, photo, { onRetake, onUsePhoto, useLabel = 'Use Photo' } = {}) {
+  const dataUrl = `data:${photo.mediaType};base64,${photo.base64}`;
+
+  container.innerHTML = `
+    <h1 class="title">Review Photo</h1>
+    <div class="photo-preview-frame">
+      <img src="${dataUrl}" alt="Captured photo" class="photo-preview-img" />
+    </div>
+    <p class="muted" style="text-align:center; margin: 10px 0 20px;">
+      Make sure the text is in frame and readable.
+    </p>
+    <button type="button" class="btn-primary" id="use-photo-btn">${useLabel}</button>
+    <button type="button" class="btn-secondary" id="retake-photo-btn">Retake Photo</button>
+  `;
+
+  document.getElementById('use-photo-btn').addEventListener('click', onUsePhoto);
+  document.getElementById('retake-photo-btn').addEventListener('click', onRetake);
+}
+
 window.capturePhoto = capturePhoto;
+window.renderPhotoPreview = renderPhotoPreview;

@@ -34,9 +34,15 @@
   function redirectForRole(role) {
     const card = document.querySelector('.card');
     if (window.renderHomeScreen) {
-      window.renderHomeScreen(card, role);
+      window.Nav.reset(window.renderHomeScreen, [card, role], {
+        title: 'Main Menu',
+        showHome: false,
+      });
     } else {
-      window.startScanFlow(card, { flowType: 'take_out' });
+      window.Nav.reset(window.startScanFlow, [card, { flowType: 'take_out' }], {
+        title: 'Take-Out',
+        showHome: false,
+      });
     }
   }
 

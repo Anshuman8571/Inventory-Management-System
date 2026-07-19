@@ -34,11 +34,25 @@ async function apiRequest(path, { method = 'GET', body } = {}) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (networkErr) {
+    // fetch() throws (rather than resolving with a bad status) when there's no
+    // connection at all — give a message that actually explains what happened,
+    // instead of the raw "Failed to fetch" browsers produce.
+    const offlineErr = new Error(
+      navigator.onLine === false
+        ? "You're offline. Reconnect to continue — some screens may still show your last saved data."
+        : 'Could not reach the server. Please check your connection and try again.'
+    );
+    offlineErr.code = 'NETWORK_ERROR';
+    throw offlineErr;
+  }
 
   const data = await response.json().catch(() => ({}));
 

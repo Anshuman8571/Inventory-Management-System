@@ -7,16 +7,12 @@ function startBillFlow(container) {
 // Same Camera-vs-Gallery choice as scan.js, for the same reason (see camera.js).
 function renderBillCaptureChoice(container) {
   container.innerHTML = `
-    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
     <h1 class="title">Photograph Supplier Bill</h1>
     <div class="category-grid">
       <button type="button" class="btn-category" id="bill-capture-camera-btn">📷 Take Photo</button>
       <button type="button" class="btn-category" id="bill-capture-gallery-btn">🖼️ Choose from Gallery</button>
     </div>
-    <button type="button" class="btn-secondary" id="bill-capture-back-btn">Back</button>
   `;
-
-  if (window.attachHomeButton) window.attachHomeButton(container);
 
   document
     .getElementById('bill-capture-camera-btn')
@@ -24,22 +20,10 @@ function renderBillCaptureChoice(container) {
   document
     .getElementById('bill-capture-gallery-btn')
     .addEventListener('click', () => captureAndScanBill(container, false));
-  document.getElementById('bill-capture-back-btn').addEventListener('click', () => {
-    goHome(container);
-  });
-}
-
-function goHome(container) {
-  const role = window.api.getRole();
-  if (window.renderHomeScreen) window.renderHomeScreen(container, role);
 }
 
 async function captureAndScanBill(container, useCamera) {
-  container.innerHTML = `
-    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
-    <p class="muted">Opening ${useCamera ? 'camera' : 'gallery'}...</p>
-  `;
-  if (window.attachHomeButton) window.attachHomeButton(container);
+  container.innerHTML = `<p class="muted">Opening ${useCamera ? 'camera' : 'gallery'}...</p>`;
 
   let photo;
   try {
@@ -49,11 +33,17 @@ async function captureAndScanBill(container, useCamera) {
     return;
   }
 
-  container.innerHTML = `
-    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
-    <p class="muted">Reading supplier bill... this may take a few moments...</p>
-  `;
-  if (window.attachHomeButton) window.attachHomeButton(container);
+  // Same preview-before-submit step as the single-sticker flow — a bill photo is
+  // more expensive to re-process than a sticker, so catching a bad shot here matters more.
+  window.renderPhotoPreview(container, photo, {
+    onRetake: () => captureAndScanBill(container, useCamera),
+    onUsePhoto: () => submitBillPhoto(container, useCamera, photo),
+    useLabel: 'Use Photo',
+  });
+}
+
+async function submitBillPhoto(container, useCamera, photo) {
+  container.innerHTML = `<p class="muted">Reading supplier bill... this may take a few moments...</p>`;
 
   let billResult;
   try {
@@ -66,18 +56,18 @@ async function captureAndScanBill(container, useCamera) {
     });
   } catch (err) {
     container.innerHTML = `
-      ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
       <p class="error-text visible">${err.message}</p>
       <button type="button" class="btn-primary" id="retry-btn">Try Again</button>
       <button type="button" class="btn-secondary" id="cancel-btn" style="margin-top: 10px;">Cancel</button>
     `;
-    if (window.attachHomeButton) window.attachHomeButton(container);
     document.getElementById('retry-btn').addEventListener('click', () => captureAndScanBill(container, useCamera));
-    document.getElementById('cancel-btn').addEventListener('click', () => goHome(container));
+    document.getElementById('cancel-btn').addEventListener('click', () => {
+      window.Nav.goHome();
+    });
     return;
   }
 
-  renderBillTable(container, billResult);
+  window.Nav.push(renderBillTable, [container, billResult], { title: 'Review Bill' });
 }
 
 function renderBillTable(container, billResult) {
@@ -85,19 +75,20 @@ function renderBillTable(container, billResult) {
 
   if (!items || items.length === 0) {
     container.innerHTML = `
-      ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
       <div class="status-card status-warning">
         <p class="status-label">No items found on this bill.</p>
       </div>
       <button type="button" class="btn-primary" id="retry-btn">Try Again</button>
       <button type="button" class="btn-secondary" id="cancel-btn">Cancel</button>
     `;
-    if (window.attachHomeButton) window.attachHomeButton(container);
     document.getElementById('retry-btn').addEventListener('click', () => renderBillCaptureChoice(container));
-    document.getElementById('cancel-btn').addEventListener('click', () => goHome(container));
+    document.getElementById('cancel-btn').addEventListener('click', () => {
+      window.Nav.goHome();
+    });
     return;
   }
 
+  // Build the table
   let tableRows = items.map((item, index) => {
     const isNew = item.isNewProduct;
     const qty = item.rawExtracted.qty || 1;
@@ -134,13 +125,14 @@ function renderBillTable(container, billResult) {
   }).join('');
 
   container.innerHTML = `
-    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
     <h2 class="title">Review Bill</h2>
     <p class="muted" style="margin-bottom: 15px;">Supplier: <strong>${escapeHtml(supplierName || 'Unknown')}</strong></p>
 
     <div id="bill-items-container">
       ${tableRows}
     </div>
+
+    <div class="bill-summary-card" id="bill-summary-card"></div>
 
     <p id="bill-error" class="error-text"></p>
 
@@ -150,13 +142,35 @@ function renderBillTable(container, billResult) {
     </div>
   `;
 
-  if (window.attachHomeButton) window.attachHomeButton(container);
+  // Keeps the totals visible and accurate as the user edits quantities/categories,
+  // rather than only finding out the total at (or after) the final tap.
+  function updateSummary() {
+    const rows = container.querySelectorAll('.bill-row');
+    let totalQty = 0;
+    let newCount = 0;
+    rows.forEach((row) => {
+      const idx = Number(row.dataset.index);
+      const qty = Number(row.querySelector('.row-qty').value) || 0;
+      totalQty += qty;
+      if (items[idx].isNewProduct) newCount += 1;
+    });
+    document.getElementById('bill-summary-card').innerHTML = `
+      <div class="bill-summary-row"><span>Line items</span><span>${rows.length}</span></div>
+      <div class="bill-summary-row"><span>Total quantity</span><span>${totalQty}</span></div>
+      <div class="bill-summary-row"><span>New products</span><span>${newCount}</span></div>
+    `;
+  }
 
-  document.getElementById('cancel-btn').addEventListener('click', () => goHome(container));
+  document.getElementById('bill-items-container').addEventListener('input', (e) => {
+    if (e.target.classList.contains('row-qty')) updateSummary();
+  });
+  updateSummary();
 
-  const confirmBillBtn = document.getElementById('confirm-bill-btn');
+  document.getElementById('cancel-btn').addEventListener('click', () => {
+    window.Nav.goHome();
+  });
 
-  confirmBillBtn.addEventListener('click', async () => {
+  document.getElementById('confirm-bill-btn').addEventListener('click', async () => {
     const errorEl = document.getElementById('bill-error');
     errorEl.textContent = '';
     errorEl.classList.remove('visible');
@@ -207,22 +221,16 @@ function renderBillTable(container, billResult) {
       });
     }
 
-    // Disable + relabel while submitting — prevents double-tapping this into applying
-    // the same bill's stock changes twice on a slow connection.
-    confirmBillBtn.disabled = true;
-    confirmBillBtn.textContent = 'Confirming...';
-
+    // Submit
     try {
       const result = await window.api.apiRequest(`/bills/${billId}/confirm`, {
         method: 'POST',
         body: { items: confirmedItems },
       });
-      showBillSuccess(container, result.processedCount);
+      window.Nav.reset(showBillSuccess, [container, result.processedCount], { title: 'Done' });
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.classList.add('visible');
-      confirmBillBtn.disabled = false;
-      confirmBillBtn.textContent = 'Confirm All Items';
     }
   });
 }
@@ -250,22 +258,15 @@ function renderPriceInfo(priceInfo) {
 
 function showBillSuccess(container, count) {
   container.innerHTML = `
-    ${window.homeButtonHtml ? window.homeButtonHtml() : ''}
     <div class="status-card status-success">
       <p class="status-label">✅ Success</p>
       <p class="muted">Added ${count} items to inventory.</p>
     </div>
-    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 20px;">
-      <button type="button" class="btn-primary" id="view-inventory-btn-bill">View Inventory</button>
-      <button type="button" class="btn-secondary" id="back-home-btn">Go to Home</button>
-    </div>
+    <button type="button" class="btn-primary" id="back-home-btn" style="margin-top:20px;">Back to Menu</button>
   `;
-  if (window.attachHomeButton) window.attachHomeButton(container);
-
-  document.getElementById('view-inventory-btn-bill').addEventListener('click', () => {
-    if (window.renderDashboard) window.renderDashboard(container);
+  document.getElementById('back-home-btn').addEventListener('click', () => {
+    window.Nav.goHome();
   });
-  document.getElementById('back-home-btn').addEventListener('click', () => goHome(container));
 }
 
 function escapeHtml(str) {
