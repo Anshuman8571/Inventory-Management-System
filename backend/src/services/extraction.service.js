@@ -1,13 +1,9 @@
-// The ONE place that calls the Gemini API for reading a product sticker photo.
-// Both the take-out and add-stock (sticker) flows call this same function —
+// The ONE place that calls the Gemini API for reading a product sticker or bill photo.
+// Both the take-out/add-stock sticker flow and the bill flow call through here —
 // see architecture.md §5 (shared extraction logic, not duplicated per flow).
 
 const env = require('../config/env');
 
-// Gemini REST endpoint — uses the generateContent API with vision support.
-// gemini-2.0-flash is used deliberately over Pro: this is a small, structured
-// extraction task (read a sticker, return JSON) that runs on every single scan,
-// so keeping cost and latency low matters (see rules.md, token/cost efficiency).
 const GEMINI_MODEL = 'gemini-flash-lite-latest';
 
 function getApiUrl() {
@@ -23,8 +19,12 @@ Return ONLY a JSON object, no other text, in exactly this shape:
 Return nothing except the JSON object — no markdown formatting, no explanation.`;
 }
 
+// Refined against real supplier invoices (Nerolac paint distributor, a CPVC/PVC fittings
+// wholesaler, and a PPR pipe supplier) — these vary a lot in column layout, so the
+// instructions below are deliberately about *what matters*, not one fixed table shape.
 function buildBillPrompt() {
-  return `You are extracting product line items from a photo of a supplier invoice or bill for a hardware shop.
+  return `You are extracting product line items from a photo of a supplier invoice/bill for a hardware and paint shop. Real invoices from different suppliers use very different table layouts — read the actual content, don't assume one fixed column order.
+
 Return ONLY a JSON object, no other text, in exactly this shape:
 {
   "supplierName": string or null,
@@ -38,6 +38,7 @@ Return ONLY a JSON object, no other text, in exactly this shape:
       "materialCode": string or null,
       "hsnCode": string or null,
       "qty": number,
+      "unit": string or null,
       "unitPrice": number or null,
       "tradeDiscount": number or null,
       "schemeDiscount": number or null,
@@ -46,15 +47,19 @@ Return ONLY a JSON object, no other text, in exactly this shape:
     }
   ]
 }
-- "name" should be a concise product name combining what's visible.
-- "brand" should be the manufacturer or brand name (e.g. Supreme, Prince, Nerolac).
-- "qty" is the total quantity of the item purchased.
-- "unitPrice" is the base rate/price per unit BEFORE tax and discounts.
-- "tradeDiscount" and "schemeDiscount" should be the percentage value (e.g. 15 for 15%).
-- "gstPercent" is the tax percentage applied (e.g. 18 for 18%).
-- "netAmount" is the final total amount for this line item.
-- If a field is not clearly visible, use null.
-Return nothing except the JSON object.`;
+
+Important guidance based on real invoice formats you will encounter:
+- Product descriptions are sometimes split across two lines (a short item code/size line, then a fuller description line below it, or vice versa) — combine them into one clear "name".
+- QUANTITY: some invoices show BOTH a countable pack/carton/piece count (e.g. "No of Packs: 36", "Qty: 100 NOS") AND a separate volume or weight figure (e.g. "Qty Ltr/Kgs: 36.00"). When both exist, "qty" MUST be the countable pack/piece/carton count — that's what physically gets counted on a shop shelf — NOT the volume/weight figure. Put the unit label you used (e.g. "pcs", "NOS", "cartons", "L", "kg") in the "unit" field so this choice is visible and can be corrected by a human if needed.
+- "unitPrice" must be the rate per the SAME unit you used for "qty" (e.g. if qty is in pieces, unitPrice is price per piece — not a per-liter or per-kg rate, even if that's also printed on the invoice).
+- Discount structures vary: some invoices show one combined "Disc %" column, others split into Trade Discount and Scheme Discount separately, others show a Cash Discount too. Map whatever is shown into tradeDiscount/schemeDiscount as best fits; if there's only one combined discount percentage, put it in tradeDiscount and leave schemeDiscount null. Don't guess a split that isn't printed.
+- "gstPercent" is the tax rate. If CGST and SGST are shown separately (e.g. 9% + 9%), add them together and report the combined rate (18%). If IGST is shown alone, use that rate directly.
+- "netAmount" is the final line total for that item (after discounts, before or after tax — use whatever "Amount" or "Total" column is printed for that row).
+- Do NOT include the invoice's summary/total row (grand total, tax summary, package summary) as an item — only actual product line items.
+- Ignore handwritten marks, ticks, circles, or annotations on the page — extract only the printed invoice content.
+- If a field isn't clearly legible, use null rather than guessing a value.
+
+Return nothing except the JSON object — no markdown formatting, no explanation.`;
 }
 
 function extractionError() {
@@ -65,7 +70,7 @@ function extractionError() {
   return err;
 }
 
-async function callGemini(imageBase64, mediaType, promptText) {
+async function callGemini(imageBase64, mediaType, promptText, maxOutputTokens) {
   const response = await fetch(getApiUrl(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -84,7 +89,7 @@ async function callGemini(imageBase64, mediaType, promptText) {
         },
       ],
       generationConfig: {
-        maxOutputTokens: 4096,
+        maxOutputTokens,
         temperature: 0,
       },
     }),
@@ -98,10 +103,24 @@ async function callGemini(imageBase64, mediaType, promptText) {
   }
 
   const data = await response.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const candidate = data?.candidates?.[0];
+  const text = candidate?.content?.parts?.[0]?.text;
+
   if (!text) {
     console.error('[extraction] Gemini returned no text block:', JSON.stringify(data));
     throw extractionError();
+  }
+
+  // finishReason 'MAX_TOKENS' means the response was cut off mid-way — this is the
+  // exact failure seen with the old 4096 limit on multi-item bills. Logging it
+  // explicitly (rather than just failing JSON.parse below) makes this specific
+  // failure mode immediately obvious in the logs if it ever happens again, instead
+  // of looking like a generic parse error.
+  if (candidate?.finishReason === 'MAX_TOKENS') {
+    console.error(
+      `[extraction] Gemini response was truncated (hit maxOutputTokens=${maxOutputTokens}). ` +
+      `This bill likely has more line items than the token budget allows — consider raising maxOutputTokens further.`
+    );
   }
 
   try {
@@ -114,7 +133,8 @@ async function callGemini(imageBase64, mediaType, promptText) {
 }
 
 async function extractStickerFields({ imageBase64, mediaType, category }) {
-  const parsed = await callGemini(imageBase64, mediaType, buildPrompt(category));
+  // Small, fixed-shape response (4 fields) — 512 tokens is generous for this.
+  const parsed = await callGemini(imageBase64, mediaType, buildPrompt(category), 512);
   return {
     name: parsed.name || null,
     size: parsed.size || null,
@@ -124,7 +144,11 @@ async function extractStickerFields({ imageBase64, mediaType, category }) {
 }
 
 async function extractBillLineItems({ imageBase64, mediaType }) {
-  const parsed = await callGemini(imageBase64, mediaType, buildBillPrompt());
+  // Bills can have many line items, each with ~13 fields — this needs real headroom.
+  // 8192 comfortably covers bills with 15-20+ line items; if a genuinely huge bill
+  // still gets truncated, the finishReason logging above will make that obvious,
+  // and this ceiling can be raised further at that point.
+  const parsed = await callGemini(imageBase64, mediaType, buildBillPrompt(), 8192);
   return {
     supplierName: parsed.supplierName || null,
     items: Array.isArray(parsed.items) ? parsed.items : [],

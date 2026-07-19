@@ -218,32 +218,33 @@ async function renderBillTable(container, billResult) {
     if (!select.classList.contains('row-category') || select.value !== '__new__') return;
 
     // Use a custom modal instead of window.prompt to avoid mobile blocking issues
+    const uniqueId = Date.now();
     const modalHtml = `
-      <div id="category-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;">
+      <div id="category-modal-${uniqueId}" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;">
         <div style="background: white; padding: 20px; border-radius: 8px; width: 100%; max-width: 400px; color: #333;">
           <h3 style="margin-top: 0;">Create New Category</h3>
           
           <label style="display: block; margin-top: 15px;">Category Name</label>
-          <input type="text" id="cat-name-input" class="row-qty" style="width: 100%; box-sizing: border-box;" placeholder="e.g. Interior Emulsion" />
+          <input type="text" class="cat-name-input row-qty" style="width: 100%; box-sizing: border-box;" placeholder="e.g. Interior Emulsion" />
           
           <label style="display: block; margin-top: 15px;">Parent Category (Optional)</label>
-          <select id="cat-parent-input" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+          <select class="cat-parent-input" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white;">
             <option value="">-- None (Top Level) --</option>
             ${categories.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.path)}</option>`).join('')}
           </select>
           
           <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
-            <button id="cat-cancel-btn" class="btn-secondary" style="padding: 8px 16px;">Cancel</button>
-            <button id="cat-save-btn" class="btn-primary" style="padding: 8px 16px;">Save</button>
+            <button class="cat-cancel-btn btn-secondary" style="padding: 8px 16px;">Cancel</button>
+            <button class="cat-save-btn btn-primary" style="padding: 8px 16px;">Save</button>
           </div>
         </div>
       </div>
     `;
 
     document.body.insertAdjacentHTML('beforeend', modalHtml);
-    const modal = document.getElementById('category-modal');
-    const nameInput = document.getElementById('cat-name-input');
-    const parentInput = document.getElementById('cat-parent-input');
+    const modal = document.getElementById(`category-modal-${uniqueId}`);
+    const nameInput = modal.querySelector('.cat-name-input');
+    const parentInput = modal.querySelector('.cat-parent-input');
     
     // Focus the input
     setTimeout(() => nameInput.focus(), 100);
@@ -285,12 +286,12 @@ async function renderBillTable(container, billResult) {
       }
     };
 
-    document.getElementById('cat-cancel-btn').addEventListener('click', () => {
+    modal.querySelector('.cat-cancel-btn').addEventListener('click', () => {
       select.value = categories[0] ? categories[0].name : '';
       cleanup();
     });
 
-    document.getElementById('cat-save-btn').addEventListener('click', handleSave);
+    modal.querySelector('.cat-save-btn').addEventListener('click', handleSave);
   });
 
   document.getElementById('cancel-btn').addEventListener('click', () => {

@@ -66,16 +66,20 @@ async function uploadBill(req, res, next) {
 
       // Compare against the matched product's last known price for display in the
       // review table — nothing is persisted yet, that only happens on confirm.
+      // FIX: this previously read `item.price`, a field that no longer exists since
+      // the extraction schema was extended with GST/discount fields and renamed this
+      // to `item.unitPrice` — meaning every comparison silently evaluated to
+      // "unknown" instead of showing a real increase/decrease.
       const priceInfo = match
-        ? pricingService.compare(match.product.last_known_price, item.price)
-        : pricingService.compare(null, item.price);
+        ? pricingService.compare(match.product.last_known_price, item.unitPrice)
+        : pricingService.compare(null, item.unitPrice);
 
       const lineItem = await billsModel.createBillLineItem({
         billId: bill.id,
         matchedProductId: match ? match.product.id : null,
         rawExtracted: item,
         isNewProduct: !match,
-        unitPrice: item.unitPrice ?? item.price ?? null, // Fallback for old fields
+        unitPrice: item.unitPrice ?? null,
         hsnCode: item.hsnCode,
         tradeDiscount: item.tradeDiscount,
         schemeDiscount: item.schemeDiscount,
