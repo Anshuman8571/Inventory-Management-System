@@ -34,16 +34,27 @@ Return ONLY a JSON object, no other text, in exactly this shape:
       "size": string or null,
       "type": string or null,
       "company": string or null,
+      "brand": string or null,
+      "materialCode": string or null,
+      "hsnCode": string or null,
       "qty": number,
-      "price": number or null
+      "unitPrice": number or null,
+      "tradeDiscount": number or null,
+      "schemeDiscount": number or null,
+      "gstPercent": number or null,
+      "netAmount": number or null
     }
   ]
 }
-- "name" should be a concise product name combining what's visible (e.g. "CPVC Elbow 3/4 inch").
-- "qty" is the total quantity of the item purchased on this bill.
-- "price" is the total price or unit price (if clearly marked). If multiple prices exist, prefer unit price.
-- If a field is not clearly visible or legible, use null for it rather than guessing.
-Return nothing except the JSON object — no markdown formatting, no explanation.`;
+- "name" should be a concise product name combining what's visible.
+- "brand" should be the manufacturer or brand name (e.g. Supreme, Prince, Nerolac).
+- "qty" is the total quantity of the item purchased.
+- "unitPrice" is the base rate/price per unit BEFORE tax and discounts.
+- "tradeDiscount" and "schemeDiscount" should be the percentage value (e.g. 15 for 15%).
+- "gstPercent" is the tax percentage applied (e.g. 18 for 18%).
+- "netAmount" is the final total amount for this line item.
+- If a field is not clearly visible, use null.
+Return nothing except the JSON object.`;
 }
 
 function extractionError() {
@@ -73,7 +84,7 @@ async function callGemini(imageBase64, mediaType, promptText) {
         },
       ],
       generationConfig: {
-        maxOutputTokens: 1000,
+        maxOutputTokens: 4096,
         temperature: 0,
       },
     }),

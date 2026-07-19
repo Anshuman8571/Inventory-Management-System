@@ -4,12 +4,12 @@ function runner(client) {
   return client || db;
 }
 
-async function create({ productId, price, billId }, client) {
+async function create({ productId, price, billId, tradeDiscount, schemeDiscount, gstPercent }, client) {
   const result = await runner(client).query(
-    `INSERT INTO price_history (product_id, price, bill_id)
-     VALUES ($1, $2, $3)
+    `INSERT INTO price_history (product_id, price, bill_id, trade_discount, scheme_discount, gst_percent)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [productId, price, billId || null]
+    [productId, price, billId || null, tradeDiscount ?? null, schemeDiscount ?? null, gstPercent ?? null]
   );
   return result.rows[0];
 }

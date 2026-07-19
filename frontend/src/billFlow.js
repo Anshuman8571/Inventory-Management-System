@@ -70,7 +70,7 @@ async function submitBillPhoto(container, useCamera, photo) {
   window.Nav.push(renderBillTable, [container, billResult], { title: 'Review Bill' });
 }
 
-function renderBillTable(container, billResult) {
+async function renderBillTable(container, billResult) {
   const { billId, supplierName, items } = billResult;
 
   if (!items || items.length === 0) {
@@ -88,6 +88,24 @@ function renderBillTable(container, billResult) {
     return;
   }
 
+  // Categories are fetched (not hardcoded) so a category created elsewhere in the
+  // app — or via "+ Add new" below — shows up here too.
+  let categories = [];
+  try {
+    const result = await window.api.apiRequest('/categories');
+    categories = result.categories || [];
+  } catch (e) {
+    categories = []; // Falls back to just the "+ Add new" option below.
+  }
+
+  function categoryOptionsHtml(selectedVal) {
+    let options = `<option value="" disabled ${!selectedVal ? 'selected' : ''}>-- Select Category --</option>`;
+    options += categories.map(c => 
+      `<option value="${escapeHtml(c.name)}" ${c.name === selectedVal ? 'selected' : ''}>${escapeHtml(c.path)}</option>`
+    ).join('');
+    return options + `<option value="__new__">+ Add new category...</option>`;
+  }
+
   // Build the table
   let tableRows = items.map((item, index) => {
     const isNew = item.isNewProduct;
@@ -96,6 +114,10 @@ function renderBillTable(container, billResult) {
     const statusText = isNew ? 'NEW' : 'MATCH';
     const statusClass = isNew ? 'status-warning' : 'status-success';
     const priceHtml = renderPriceInfo(item.priceInfo);
+    // Bill extraction doesn't guess a category per line (bills mix categories —
+    // see matchingService.findBestMatch's category: null above) so this just
+    // defaults to the first category and leaves it to the user to correct.
+    const defaultCategory = categories[0] ? categories[0].name : '';
 
     return `
       <div class="bill-row" data-index="${index}" style="border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; border-radius: 4px;">
@@ -110,14 +132,35 @@ function renderBillTable(container, billResult) {
         ${isNew ? `
           <label>Category</label>
           <select class="row-category">
-            <option value="CPVC">CPVC</option>
-            <option value="PVC">PVC</option>
-            <option value="Paint">Paint</option>
+            ${categoryOptionsHtml(defaultCategory)}
           </select>
         ` : ''}
 
         <label>Quantity</label>
         <input type="number" class="row-qty" value="${qty}" min="1" inputmode="numeric" />
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+          <div>
+            <label>Base Rate (₹)</label>
+            <input type="number" class="row-price" value="${item.rawExtracted.unitPrice || item.rawExtracted.price || ''}" step="0.01" />
+          </div>
+          <div>
+            <label>HSN Code</label>
+            <input type="text" class="row-hsn" value="${escapeHtml(item.rawExtracted.hsnCode || '')}" />
+          </div>
+          <div>
+            <label>Trade Disc (%)</label>
+            <input type="number" class="row-trade-disc" value="${item.rawExtracted.tradeDiscount || ''}" step="0.01" />
+          </div>
+          <div>
+            <label>Scheme Disc (%)</label>
+            <input type="number" class="row-scheme-disc" value="${item.rawExtracted.schemeDiscount || ''}" step="0.01" />
+          </div>
+          <div>
+            <label>GST (%)</label>
+            <input type="number" class="row-gst" value="${item.rawExtracted.gstPercent || ''}" step="0.01" />
+          </div>
+        </div>
 
         ${priceHtml}
       </div>
@@ -166,6 +209,90 @@ function renderBillTable(container, billResult) {
   });
   updateSummary();
 
+  // "+ Add new category..." in a row's dropdown — prompts for a name, creates it,
+  // and selects it in that row. Kept as a quick native prompt rather than a full
+  // inline form (like the main category-select screen has) since this is a
+  // secondary path inside an already-dense bulk-review table.
+  document.getElementById('bill-items-container').addEventListener('change', async (e) => {
+    const select = e.target;
+    if (!select.classList.contains('row-category') || select.value !== '__new__') return;
+
+    // Use a custom modal instead of window.prompt to avoid mobile blocking issues
+    const modalHtml = `
+      <div id="category-modal" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px;">
+        <div style="background: white; padding: 20px; border-radius: 8px; width: 100%; max-width: 400px; color: #333;">
+          <h3 style="margin-top: 0;">Create New Category</h3>
+          
+          <label style="display: block; margin-top: 15px;">Category Name</label>
+          <input type="text" id="cat-name-input" class="row-qty" style="width: 100%; box-sizing: border-box;" placeholder="e.g. Interior Emulsion" />
+          
+          <label style="display: block; margin-top: 15px;">Parent Category (Optional)</label>
+          <select id="cat-parent-input" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; background: white;">
+            <option value="">-- None (Top Level) --</option>
+            ${categories.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.path)}</option>`).join('')}
+          </select>
+          
+          <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+            <button id="cat-cancel-btn" class="btn-secondary" style="padding: 8px 16px;">Cancel</button>
+            <button id="cat-save-btn" class="btn-primary" style="padding: 8px 16px;">Save</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    const modal = document.getElementById('category-modal');
+    const nameInput = document.getElementById('cat-name-input');
+    const parentInput = document.getElementById('cat-parent-input');
+    
+    // Focus the input
+    setTimeout(() => nameInput.focus(), 100);
+
+    const cleanup = () => {
+      modal.remove();
+    };
+
+    const handleSave = async () => {
+      const name = nameInput.value.trim();
+      if (!name) {
+        alert('Please enter a category name.');
+        return;
+      }
+      
+      const parentName = parentInput.value || null;
+      
+      try {
+        const { category } = await window.api.apiRequest('/categories', {
+          method: 'POST',
+          body: { name, parentName },
+        });
+        
+        if (!categories.find(c => c.name === category.name)) categories.push(category);
+        
+        // Add new category to ALL category dropdowns in the UI so it's available everywhere
+        document.querySelectorAll('.row-category').forEach(sel => {
+          const option = document.createElement('option');
+          option.value = category.name;
+          option.textContent = category.path;
+          sel.insertBefore(option, sel.lastElementChild);
+        });
+
+        // Set the current select to the newly created category
+        select.value = category.name;
+        cleanup();
+      } catch (err) {
+        alert(err.message);
+      }
+    };
+
+    document.getElementById('cat-cancel-btn').addEventListener('click', () => {
+      select.value = categories[0] ? categories[0].name : '';
+      cleanup();
+    });
+
+    document.getElementById('cat-save-btn').addEventListener('click', handleSave);
+  });
+
   document.getElementById('cancel-btn').addEventListener('click', () => {
     window.Nav.goHome();
   });
@@ -201,6 +328,12 @@ function renderBillTable(container, billResult) {
           return;
         }
 
+        if (!catSelect.value || catSelect.value === '__new__') {
+          errorEl.textContent = `Please select a valid category for "${nameInput.value.trim()}".`;
+          errorEl.classList.add('visible');
+          return;
+        }
+
         newProductDetails = {
           name: nameInput.value.trim(),
           category: catSelect.value,
@@ -212,12 +345,23 @@ function renderBillTable(container, billResult) {
         };
       }
 
+      const priceInput = row.querySelector('.row-price');
+      const hsnInput = row.querySelector('.row-hsn');
+      const tradeDiscInput = row.querySelector('.row-trade-disc');
+      const schemeDiscInput = row.querySelector('.row-scheme-disc');
+      const gstInput = row.querySelector('.row-gst');
+
       confirmedItems.push({
         id: item.id,
         qty,
         isNewProduct: item.isNewProduct,
         newProductDetails: item.isNewProduct ? newProductDetails : undefined,
-        productId: item.isNewProduct ? undefined : item.match.productId
+        productId: item.isNewProduct ? undefined : item.match.productId,
+        unitPrice: priceInput.value ? Number(priceInput.value) : null,
+        hsnCode: hsnInput.value ? hsnInput.value.trim() : null,
+        tradeDiscount: tradeDiscInput.value ? Number(tradeDiscInput.value) : null,
+        schemeDiscount: schemeDiscInput.value ? Number(schemeDiscInput.value) : null,
+        gstPercent: gstInput.value ? Number(gstInput.value) : null,
       });
     }
 

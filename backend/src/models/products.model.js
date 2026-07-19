@@ -23,12 +23,12 @@ async function findById(id, client) {
   return result.rows[0] || null;
 }
 
-async function create({ category, name, company, unit, attributes, initialQty }, client) {
+async function create({ category, name, company, unit, attributes, initialQty, hsnCode }, client) {
   const result = await runner(client).query(
-    `INSERT INTO products (category, name, company, unit, current_qty, attributes)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO products (category, name, company, unit, current_qty, attributes, hsn_code)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [category, name, company || null, unit || 'pcs', initialQty || 0, attributes || {}]
+    [category, name, company || null, unit || 'pcs', initialQty || 0, attributes || {}, hsnCode || null]
   );
   return result.rows[0];
 }

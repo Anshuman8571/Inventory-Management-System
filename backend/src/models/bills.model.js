@@ -9,14 +9,14 @@ async function createBill({ uploadedByUserId, supplierName }, client = db) {
 }
 
 async function createBillLineItem(
-  { billId, matchedProductId, rawExtracted, isNewProduct, unitPrice },
+  { billId, matchedProductId, rawExtracted, isNewProduct, unitPrice, hsnCode, tradeDiscount, schemeDiscount, gstPercent, netAmount },
   client = db
 ) {
   const result = await client.query(
     `INSERT INTO bill_line_items 
-      (bill_id, matched_product_id, raw_extracted, is_new_product, unit_price) 
-     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [billId, matchedProductId, rawExtracted, isNewProduct, unitPrice ?? null]
+      (bill_id, matched_product_id, raw_extracted, is_new_product, unit_price, hsn_code, trade_discount, scheme_discount, gst_percent, net_amount) 
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+    [billId, matchedProductId, rawExtracted, isNewProduct, unitPrice ?? null, hsnCode ?? null, tradeDiscount ?? null, schemeDiscount ?? null, gstPercent ?? null, netAmount ?? null]
   );
   return result.rows[0];
 }
@@ -43,11 +43,40 @@ async function findLineItemForUpdate(id, client) {
   return result.rows[0] || null;
 }
 
-async function updateBillLineItem(id, { confirmedQty, confirmed }, client = db) {
-  const result = await client.query(
-    'UPDATE bill_line_items SET confirmed_qty = $1, confirmed = $2 WHERE id = $3 RETURNING *',
-    [confirmedQty, confirmed, id]
-  );
+async function updateBillLineItem(id, fields, client = db) {
+  let query = 'UPDATE bill_line_items SET confirmed = $1';
+  const params = [fields.confirmed];
+  let paramIdx = 2;
+
+  if (fields.confirmedQty !== undefined) {
+    query += `, confirmed_qty = $${paramIdx++}`;
+    params.push(fields.confirmedQty);
+  }
+  if (fields.unitPrice !== undefined) {
+    query += `, unit_price = $${paramIdx++}`;
+    params.push(fields.unitPrice);
+  }
+  if (fields.hsnCode !== undefined) {
+    query += `, hsn_code = $${paramIdx++}`;
+    params.push(fields.hsnCode);
+  }
+  if (fields.tradeDiscount !== undefined) {
+    query += `, trade_discount = $${paramIdx++}`;
+    params.push(fields.tradeDiscount);
+  }
+  if (fields.schemeDiscount !== undefined) {
+    query += `, scheme_discount = $${paramIdx++}`;
+    params.push(fields.schemeDiscount);
+  }
+  if (fields.gstPercent !== undefined) {
+    query += `, gst_percent = $${paramIdx++}`;
+    params.push(fields.gstPercent);
+  }
+
+  query += ` WHERE id = $${paramIdx} RETURNING *`;
+  params.push(id);
+
+  const result = await client.query(query, params);
   return result.rows[0];
 }
 

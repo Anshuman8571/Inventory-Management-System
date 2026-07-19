@@ -10,6 +10,7 @@ const productsModel = require('../models/products.model');
 const scanEventsModel = require('../models/scanEvents.model');
 const stockMovementsModel = require('../models/stockMovements.model');
 const billsModel = require('../models/bills.model');
+const categoriesModel = require('../models/categories.model');
 const pricingService = require('./pricing.service');
 
 function makeError(message, status, code) {
@@ -139,14 +140,40 @@ async function confirmBillEvent({ billId, items, confirmedByUserId }) {
             'INVALID_INPUT'
           );
         }
+        const canonicalCategory = await categoriesModel.findByNameCaseInsensitive(
+          item.newProductDetails.category,
+          client
+        );
+        if (!canonicalCategory) {
+          throw makeError(
+            `Unknown category "${item.newProductDetails.category}". Please select or create a category first.`,
+            400,
+            'UNKNOWN_CATEGORY'
+          );
+        }
+        let productCategoryName = canonicalCategory.name;
+
+        // Automatically apply the brand name extracted from the bills as a sub-category
+        if (lineItem.raw_extracted && lineItem.raw_extracted.brand) {
+          const brandName = lineItem.raw_extracted.brand.trim();
+          if (brandName.length > 0) {
+            let brandCategory = await categoriesModel.findByNameCaseInsensitive(brandName, client);
+            if (!brandCategory) {
+              brandCategory = await categoriesModel.create(brandName, canonicalCategory.name, client);
+            }
+            productCategoryName = brandCategory.name;
+          }
+        }
+
         const created = await productsModel.create(
           {
-            category: item.newProductDetails.category,
+            category: productCategoryName,
             name: item.newProductDetails.name,
             company: item.newProductDetails.company,
             unit: item.newProductDetails.unit,
             attributes: item.newProductDetails.attributes,
             initialQty: 0,
+            hsnCode: lineItem.hsn_code || lineItem.raw_extracted?.hsnCode || null,
           },
           client
         );
@@ -166,17 +193,32 @@ async function confirmBillEvent({ billId, items, confirmedByUserId }) {
         client
       );
 
-      // Record the price this item was bought at, using the price captured at upload
-      // time (lineItem.unit_price) — same transaction as the stock change, so price
-      // and stock history never drift apart from each other.
+      // Use frontend provided values if they exist (user edits), otherwise fallback to originally extracted DB values
+      const finalUnitPrice = item.unitPrice !== undefined ? item.unitPrice : lineItem.unit_price;
+      const finalTradeDiscount = item.tradeDiscount !== undefined ? item.tradeDiscount : lineItem.trade_discount;
+      const finalSchemeDiscount = item.schemeDiscount !== undefined ? item.schemeDiscount : lineItem.scheme_discount;
+      const finalGstPercent = item.gstPercent !== undefined ? item.gstPercent : lineItem.gst_percent;
+      const finalHsnCode = item.hsnCode !== undefined ? item.hsnCode : lineItem.hsn_code;
+
       await pricingService.recordPrice({
         productId,
-        newPrice: lineItem.unit_price,
+        newPrice: finalUnitPrice,
+        tradeDiscount: finalTradeDiscount,
+        schemeDiscount: finalSchemeDiscount,
+        gstPercent: finalGstPercent,
         billId,
         client,
       });
 
-      await billsModel.updateBillLineItem(item.id, { confirmedQty: item.qty, confirmed: true }, client);
+      await billsModel.updateBillLineItem(item.id, {
+        confirmedQty: item.qty,
+        confirmed: true,
+        unitPrice: finalUnitPrice,
+        tradeDiscount: finalTradeDiscount,
+        schemeDiscount: finalSchemeDiscount,
+        gstPercent: finalGstPercent,
+        hsnCode: finalHsnCode,
+      }, client);
     }
 
     await client.query('COMMIT');

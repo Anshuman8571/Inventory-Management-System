@@ -23,10 +23,10 @@ function compare(previousPrice, newPrice) {
 // Actually persists the new price — called during bill confirmation, inside the same
 // transaction as the stock update, so price and stock never get out of sync with
 // each other if something fails partway through.
-async function recordPrice({ productId, newPrice, billId, client }) {
+async function recordPrice({ productId, newPrice, billId, tradeDiscount, schemeDiscount, gstPercent, client }) {
   if (newPrice == null) return; // nothing to record if price wasn't legible on the bill
 
-  await priceHistoryModel.create({ productId, price: newPrice, billId }, client);
+  await priceHistoryModel.create({ productId, price: newPrice, billId, tradeDiscount, schemeDiscount, gstPercent }, client);
   await productsModel.updatePrice(productId, newPrice, client);
 }
 

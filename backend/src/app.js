@@ -14,6 +14,7 @@ app.get('/health', (req, res) => {
 
 // Route modules, mounted as they're built, phase by phase:
 app.use('/auth', require('./routes/auth.routes'));
+app.use('/categories', require('./routes/categories.routes'));
 app.use('/scan', require('./routes/scan.routes'));
 app.use('/products', require('./routes/products.routes'));
 app.use('/bills', require('./routes/bills.routes'));

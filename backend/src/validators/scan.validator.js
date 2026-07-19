@@ -1,10 +1,12 @@
 const { z } = require('zod');
 
-const CATEGORIES = ['CPVC', 'PVC', 'Paint'];
-
+// Categories are now user-created (see migration 007 + categories.model.js) rather
+// than a fixed list, so this only validates shape/length. Whether the category
+// actually exists is checked against the categories table in scan.controller.js —
+// that needs a DB call, which doesn't belong in a synchronous zod schema.
 const scanRequestSchema = z
   .object({
-    category: z.enum(CATEGORIES),
+    category: z.string().trim().min(1, 'Category is required').max(40),
     imageBase64: z.string().optional(),
     mediaType: z.enum(['image/jpeg', 'image/png', 'image/webp']).default('image/jpeg'),
     flowType: z.enum(['take_out', 'add_stock']).default('take_out'),
@@ -38,4 +40,4 @@ const scanConfirmSchema = z
     path: ['newProductDetails'],
   });
 
-module.exports = { scanRequestSchema, scanConfirmSchema, CATEGORIES };
+module.exports = { scanRequestSchema, scanConfirmSchema };

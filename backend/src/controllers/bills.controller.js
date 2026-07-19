@@ -23,6 +23,11 @@ const confirmBillSchema = z.object({
       attributes: z.record(z.any()).optional(),
     }).optional(),
     productId: z.number().int().positive().optional(),
+    unitPrice: z.number().nullable().optional(),
+    tradeDiscount: z.number().nullable().optional(),
+    schemeDiscount: z.number().nullable().optional(),
+    gstPercent: z.number().nullable().optional(),
+    hsnCode: z.string().nullable().optional(),
   })).min(1, 'At least one item must be confirmed')
 });
 
@@ -70,7 +75,12 @@ async function uploadBill(req, res, next) {
         matchedProductId: match ? match.product.id : null,
         rawExtracted: item,
         isNewProduct: !match,
-        unitPrice: item.price ?? null,
+        unitPrice: item.unitPrice ?? item.price ?? null, // Fallback for old fields
+        hsnCode: item.hsnCode,
+        tradeDiscount: item.tradeDiscount,
+        schemeDiscount: item.schemeDiscount,
+        gstPercent: item.gstPercent,
+        netAmount: item.netAmount,
       });
 
       processedItems.push({

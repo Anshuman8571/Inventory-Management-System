@@ -5,6 +5,7 @@ const extractionService = require('../services/extraction.service');
 const matchingService = require('../services/matching.service');
 const inventoryService = require('../services/inventory.service');
 const scanEventsModel = require('../models/scanEvents.model');
+const categoriesModel = require('../models/categories.model');
 const { scanRequestSchema, scanConfirmSchema } = require('../validators/scan.validator');
 
 function makeError(message, status, code) {
@@ -25,6 +26,15 @@ async function createScan(req, res, next) {
     }
     const { category, imageBase64, mediaType, flowType, isManual } = parsed.data;
 
+    const canonicalCategory = await categoriesModel.findByNameCaseInsensitive(category);
+    if (!canonicalCategory) {
+      throw makeError(
+        'Unknown category. Please select or create a category first.',
+        400,
+        'UNKNOWN_CATEGORY'
+      );
+    }
+
     let extracted;
     let match = null;
 
@@ -34,11 +44,11 @@ async function createScan(req, res, next) {
       extracted = await extractionService.extractStickerFields({
         imageBase64,
         mediaType,
-        category,
+        category: canonicalCategory.name,
       });
 
       match = await matchingService.findBestMatch({
-        category,
+        category: canonicalCategory.name,
         extractedName: extracted.name,
       });
     }
@@ -46,7 +56,7 @@ async function createScan(req, res, next) {
     const scanEvent = await scanEventsModel.create({
       flowType,
       source: 'sticker',
-      categorySelected: category,
+      categorySelected: canonicalCategory.name,
       rawExtracted: extracted,
       matchedProductId: match ? match.product.id : null,
       isNewProduct: !match,
