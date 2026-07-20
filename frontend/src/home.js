@@ -57,7 +57,7 @@ function renderHomeScreen(container, role) {
 
   document.getElementById('view-inventory-btn').addEventListener('click', () => {
     if (window.renderDashboard) {
-      window.Nav.push(window.renderDashboard, [container], { title: 'Inventory Dashboard' });
+      window.Nav.push(window.renderDashboard, [container], { title: 'Inventory Dashboard', wide: true });
     }
   });
 

@@ -70,6 +70,13 @@
     const showBack = !!top && top.showBack && stack.length > 1;
     const showHome = !!top && top.showHome;
 
+    // Most screens are transactional (scan a sticker, confirm a qty) and are
+    // deliberately narrow/phone-width. A few (like the dashboard's cross-tab
+    // table) are read-heavy and genuinely benefit from more room — this just
+    // toggles a body class those screens' CSS can key off, it doesn't force a
+    // fixed width so it still degrades to a normal scrollable table on a phone.
+    document.body.classList.toggle('wide-screen', !!(top && top.wide));
+
     if (!showBack && !showHome) {
       headerEl.style.display = 'none';
       return;
@@ -91,6 +98,7 @@
       title: opts.title || '',
       showBack: opts.showBack !== false,
       showHome: opts.showHome !== false,
+      wide: !!opts.wide,
     });
     history.pushState({ navDepth: stack.length }, '');
     renderFn(...args);
