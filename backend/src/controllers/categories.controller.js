@@ -76,4 +76,41 @@ async function createCategory(req, res, next) {
   }
 }
 
-module.exports = { getCategories, createCategory };
+async function updateCategory(req, res, next) {
+  try {
+    const oldName = req.params.name;
+    const newName = typeof req.body?.newName === 'string' ? req.body.newName.trim() : '';
+
+    if (!newName || newName.length > 40) {
+      throw makeError('Category name must be 1-40 characters.', 400, 'INVALID_INPUT');
+    }
+
+    const category = await categoriesModel.findByNameCaseInsensitive(oldName);
+    if (!category) throw makeError('Category not found.', 404, 'NOT_FOUND');
+
+    const existing = await categoriesModel.findByNameCaseInsensitive(newName);
+    if (existing && existing.name !== category.name) {
+      throw makeError('Category with this name already exists.', 409, 'CONFLICT');
+    }
+
+    await categoriesModel.update(category.name, newName);
+    res.json({ success: true, message: 'Category renamed.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteCategory(req, res, next) {
+  try {
+    const name = req.params.name;
+    const category = await categoriesModel.findByNameCaseInsensitive(name);
+    if (!category) throw makeError('Category not found.', 404, 'NOT_FOUND');
+
+    await categoriesModel.softDelete(category.name);
+    res.json({ success: true, message: 'Category deleted.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getCategories, createCategory, updateCategory, deleteCategory };

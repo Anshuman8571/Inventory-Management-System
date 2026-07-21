@@ -45,4 +45,51 @@ async function getHistory(req, res, next) {
   }
 }
 
-module.exports = { getProducts, getHistory };
+async function updateProduct(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) throw makeError('Invalid product reference.', 400, 'INVALID_INPUT');
+
+    const product = await productsModel.findById(id);
+    if (!product) throw makeError('Product not found.', 404, 'NOT_FOUND');
+
+    const { name, company, category, unit, current_qty, attributes } = req.body;
+    
+    if (!name || typeof name !== 'string') throw makeError('Name is required.', 400, 'INVALID_INPUT');
+    if (!category || typeof category !== 'string') throw makeError('Category is required.', 400, 'INVALID_INPUT');
+    if (current_qty !== undefined && (typeof current_qty !== 'number' || current_qty < 0)) {
+      throw makeError('Quantity must be a positive number.', 400, 'INVALID_INPUT');
+    }
+
+    const updates = {
+      name,
+      company: company || null,
+      category,
+      unit: unit || 'pcs',
+      current_qty: current_qty !== undefined ? current_qty : product.current_qty,
+      attributes: attributes || product.attributes || {}
+    };
+
+    const updated = await productsModel.update(id, updates);
+    res.json({ product: updated });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function deleteProduct(req, res, next) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) throw makeError('Invalid product reference.', 400, 'INVALID_INPUT');
+
+    const product = await productsModel.findById(id);
+    if (!product) throw makeError('Product not found.', 404, 'NOT_FOUND');
+
+    await productsModel.softDelete(id);
+    res.json({ success: true, message: 'Product deleted successfully.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getProducts, getHistory, updateProduct, deleteProduct };

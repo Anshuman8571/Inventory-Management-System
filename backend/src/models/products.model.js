@@ -10,8 +10,8 @@ function runner(client) {
 
 async function findByCategory(category, client) {
   const query = category
-    ? 'SELECT id, name, company, unit, current_qty, attributes FROM products WHERE category = $1'
-    : 'SELECT id, name, company, unit, current_qty, attributes FROM products';
+    ? 'SELECT id, name, company, unit, current_qty, attributes FROM products WHERE category = $1 AND deleted_at IS NULL'
+    : 'SELECT id, name, company, unit, current_qty, attributes FROM products WHERE deleted_at IS NULL';
   const params = category ? [category] : [];
 
   const result = await runner(client).query(query, params);
@@ -19,7 +19,7 @@ async function findByCategory(category, client) {
 }
 
 async function findById(id, client) {
-  const result = await runner(client).query('SELECT * FROM products WHERE id = $1', [id]);
+  const result = await runner(client).query('SELECT * FROM products WHERE id = $1 AND deleted_at IS NULL', [id]);
   return result.rows[0] || null;
 }
 
@@ -37,7 +37,7 @@ async function create({ category, name, company, unit, attributes, initialQty, h
 // that should ever change current_qty.
 async function incrementQty(id, delta, client) {
   const result = await runner(client).query(
-    `UPDATE products SET current_qty = current_qty + $1 WHERE id = $2 RETURNING *`,
+    `UPDATE products SET current_qty = current_qty + $1 WHERE id = $2 AND deleted_at IS NULL RETURNING *`,
     [delta, id]
   );
   return result.rows[0];
@@ -47,7 +47,7 @@ async function incrementQty(id, delta, client) {
 // pricing.service.js during bill confirmation.
 async function updatePrice(id, price, client) {
   const result = await runner(client).query(
-    `UPDATE products SET last_known_price = $1 WHERE id = $2 RETURNING *`,
+    `UPDATE products SET last_known_price = $1 WHERE id = $2 AND deleted_at IS NULL RETURNING *`,
     [price, id]
   );
   return result.rows[0];
@@ -67,9 +67,29 @@ async function list(client) {
        ORDER BY recorded_at DESC
        OFFSET 1 LIMIT 1
      ) ph ON true
+     WHERE p.deleted_at IS NULL
      ORDER BY p.category, p.name`
   );
   return result.rows;
 }
 
-module.exports = { findByCategory, findById, create, incrementQty, updatePrice, list };
+async function update(id, updates, client) {
+  const result = await runner(client).query(
+    `UPDATE products 
+     SET name = $1, company = $2, category = $3, unit = $4, current_qty = $5, attributes = $6 
+     WHERE id = $7 AND deleted_at IS NULL
+     RETURNING *`,
+    [updates.name, updates.company, updates.category, updates.unit, updates.current_qty, updates.attributes, id]
+  );
+  return result.rows[0];
+}
+
+async function softDelete(id, client) {
+  const result = await runner(client).query(
+    `UPDATE products SET deleted_at = now() WHERE id = $1 RETURNING *`,
+    [id]
+  );
+  return result.rows[0];
+}
+
+module.exports = { findByCategory, findById, create, incrementQty, updatePrice, list, update, softDelete };
