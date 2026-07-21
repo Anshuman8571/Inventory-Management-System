@@ -33,12 +33,18 @@ async function captureAndScanBill(container, useCamera) {
     return;
   }
 
-  // Same preview-before-submit step as the single-sticker flow — a bill photo is
-  // more expensive to re-process than a sticker, so catching a bad shot here matters more.
-  window.renderPhotoPreview(container, photo, {
+  // We now present an interactive crop screen instead of a static preview,
+  // allowing the user to frame the bill perfectly before it goes to the AI.
+  window.renderCropScreen(container, photo.base64, {
     onRetake: () => captureAndScanBill(container, useCamera),
-    onUsePhoto: () => submitBillPhoto(container, useCamera, photo),
-    useLabel: 'Use Photo',
+    onCropComplete: (croppedBase64) => {
+      // Create a new photo object with the cropped image
+      const croppedPhoto = {
+        mediaType: photo.mediaType,
+        base64: croppedBase64
+      };
+      submitBillPhoto(container, useCamera, croppedPhoto);
+    }
   });
 }
 
