@@ -8,7 +8,8 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "migrate": "node scripts/migrate.js",
-    "seed:users": "node scripts/seedUsers.js"
+    "seed:users": "node scripts/seedUsers.js",
+    "test": "jest"
   },
   "dependencies": {
     "express": "^4.19.2",
@@ -18,5 +19,9 @@
     "dotenv": "^16.4.5",
     "zod": "^3.23.8",
     "fastest-levenshtein": "^1.0.16"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0"
   }
 }

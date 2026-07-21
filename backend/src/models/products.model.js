@@ -23,12 +23,50 @@ async function findById(id, client) {
   return result.rows[0] || null;
 }
 
-async function create({ category, name, company, unit, attributes, initialQty, hsnCode }, client) {
+async function create({ category, name, company, unit, attributes, initialQty, hsnCode, lowStockAt }, client) {
   const result = await runner(client).query(
-    `INSERT INTO products (category, name, company, unit, current_qty, attributes, hsn_code)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO products (category, name, company, unit, current_qty, attributes, hsn_code, low_stock_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING *`,
-    [category, name, company || null, unit || 'pcs', initialQty || 0, attributes || {}, hsnCode || null]
+    [
+      category,
+      name,
+      company || null,
+      unit || 'pcs',
+      initialQty || 0,
+      attributes || {},
+      hsnCode || null,
+      lowStockAt != null ? lowStockAt : 0,
+    ]
+  );
+  return result.rows[0];
+}
+
+// Partial update for fixing a mis-scanned entry (name/size/company/unit) or setting
+// a reorder threshold after the fact — neither had any UI/API path before this.
+// Only touches fields actually provided; attributes are shallow-merged (not replaced)
+// so e.g. updating `size` doesn't wipe out other attribute keys already on the product.
+async function update(id, { name, company, unit, lowStockAt, attributes }, client) {
+  const existing = await findById(id, client);
+  if (!existing) return null;
+
+  const mergedAttributes = attributes
+    ? { ...(existing.attributes || {}), ...attributes }
+    : existing.attributes;
+
+  const result = await runner(client).query(
+    `UPDATE products
+     SET name = $1, company = $2, unit = $3, low_stock_at = $4, attributes = $5
+     WHERE id = $6
+     RETURNING *`,
+    [
+      name != null ? name : existing.name,
+      company !== undefined ? company : existing.company,
+      unit != null ? unit : existing.unit,
+      lowStockAt != null ? lowStockAt : existing.low_stock_at,
+      mergedAttributes,
+      id,
+    ]
   );
   return result.rows[0];
 }
@@ -37,7 +75,7 @@ async function create({ category, name, company, unit, attributes, initialQty, h
 // that should ever change current_qty.
 async function incrementQty(id, delta, client) {
   const result = await runner(client).query(
-    `UPDATE products SET current_qty = current_qty + $1 WHERE id = $2 AND deleted_at IS NULL RETURNING *`,
+    `UPDATE products SET current_qty = current_qty + $1 WHERE id = $2 RETURNING *`,
     [delta, id]
   );
   return result.rows[0];
@@ -47,7 +85,7 @@ async function incrementQty(id, delta, client) {
 // pricing.service.js during bill confirmation.
 async function updatePrice(id, price, client) {
   const result = await runner(client).query(
-    `UPDATE products SET last_known_price = $1 WHERE id = $2 AND deleted_at IS NULL RETURNING *`,
+    `UPDATE products SET last_known_price = $1 WHERE id = $2 RETURNING *`,
     [price, id]
   );
   return result.rows[0];
@@ -73,23 +111,12 @@ async function list(client) {
   return result.rows;
 }
 
-async function update(id, updates, client) {
-  const result = await runner(client).query(
-    `UPDATE products 
-     SET name = $1, company = $2, category = $3, unit = $4, current_qty = $5, attributes = $6 
-     WHERE id = $7 AND deleted_at IS NULL
-     RETURNING *`,
-    [updates.name, updates.company, updates.category, updates.unit, updates.current_qty, updates.attributes, id]
-  );
-  return result.rows[0];
-}
-
 async function softDelete(id, client) {
   const result = await runner(client).query(
-    `UPDATE products SET deleted_at = now() WHERE id = $1 RETURNING *`,
+    `UPDATE products SET deleted_at = NOW() WHERE id = $1 RETURNING *`,
     [id]
   );
   return result.rows[0];
 }
 
-module.exports = { findByCategory, findById, create, incrementQty, updatePrice, list, update, softDelete };
+module.exports = { findByCategory, findById, create, update, incrementQty, updatePrice, list, softDelete };

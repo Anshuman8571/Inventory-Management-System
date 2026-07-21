@@ -134,6 +134,9 @@ async function renderBillTable(container, billResult) {
           <select class="row-category">
             ${categoryOptionsHtml(defaultCategory)}
           </select>
+
+          <label>Low stock alert at <span class="muted">(optional)</span></label>
+          <input type="number" class="row-low-stock" min="0" inputmode="numeric" placeholder="e.g. 10" />
         ` : ''}
 
         <label>Quantity</label>
@@ -344,6 +347,17 @@ async function renderBillTable(container, billResult) {
             type: item.rawExtracted.type || undefined
           }
         };
+
+        const lowStockInput = row.querySelector('.row-low-stock').value.trim();
+        if (lowStockInput !== '') {
+          const lowStockAt = Number(lowStockInput);
+          if (!Number.isInteger(lowStockAt) || lowStockAt < 0) {
+            errorEl.textContent = `Low stock threshold for "${nameInput.value.trim()}" must be 0 or a positive whole number.`;
+            errorEl.classList.add('visible');
+            return;
+          }
+          newProductDetails.lowStockAt = lowStockAt;
+        }
       }
 
       const priceInput = row.querySelector('.row-price');

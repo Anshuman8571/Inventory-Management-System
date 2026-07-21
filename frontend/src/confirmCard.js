@@ -63,6 +63,9 @@ async function renderConfirmCard(
 
         <label for="new-size">Size / Type</label>
         <input type="text" id="new-size" value="${escapeHtml(extracted.size || extracted.type || '')}" />
+
+        <label for="new-low-stock">Low stock alert at <span class="muted">(optional)</span></label>
+        <input type="number" id="new-low-stock" min="0" inputmode="numeric" placeholder="e.g. 10" />
       `
           : ''
       }
@@ -120,6 +123,16 @@ async function renderConfirmCard(
         company: document.getElementById('new-company').value.trim() || undefined,
         attributes: { size: document.getElementById('new-size').value.trim() || undefined },
       };
+      const lowStockInput = document.getElementById('new-low-stock').value.trim();
+      if (lowStockInput !== '') {
+        const lowStockAt = Number(lowStockInput);
+        if (!Number.isInteger(lowStockAt) || lowStockAt < 0) {
+          errorEl.textContent = 'Low stock threshold must be 0 or a positive whole number.';
+          errorEl.classList.add('visible');
+          return;
+        }
+        newProductDetails.lowStockAt = lowStockAt;
+      }
     }
 
     // Disable + relabel while submitting so a slow connection can't be double-tapped

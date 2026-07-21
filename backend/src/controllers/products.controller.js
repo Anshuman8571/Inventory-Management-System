@@ -1,6 +1,7 @@
 const productsModel = require('../models/products.model');
 const stockMovementsModel = require('../models/stockMovements.model');
 const priceHistoryModel = require('../models/priceHistory.model');
+const { productUpdateSchema } = require('../validators/products.validator');
 
 function makeError(message, status, code) {
   const err = new Error(message);
@@ -45,32 +46,28 @@ async function getHistory(req, res, next) {
   }
 }
 
+// Fixes a mis-scanned entry (wrong name/size/company) or sets a reorder threshold
+// after the fact. Deliberately does NOT touch current_qty, category, or price —
+// those have their own dedicated, audited paths (stock movements, bill confirm) and
+// changing them here would bypass that trail.
 async function updateProduct(req, res, next) {
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) throw makeError('Invalid product reference.', 400, 'INVALID_INPUT');
-
-    const product = await productsModel.findById(id);
-    if (!product) throw makeError('Product not found.', 404, 'NOT_FOUND');
-
-    const { name, company, category, unit, current_qty, attributes } = req.body;
-    
-    if (!name || typeof name !== 'string') throw makeError('Name is required.', 400, 'INVALID_INPUT');
-    if (!category || typeof category !== 'string') throw makeError('Category is required.', 400, 'INVALID_INPUT');
-    if (current_qty !== undefined && (typeof current_qty !== 'number' || current_qty < 0)) {
-      throw makeError('Quantity must be a positive number.', 400, 'INVALID_INPUT');
+    if (!Number.isInteger(id)) {
+      throw makeError('Invalid product reference.', 400, 'INVALID_INPUT');
     }
 
-    const updates = {
-      name,
-      company: company || null,
-      category,
-      unit: unit || 'pcs',
-      current_qty: current_qty !== undefined ? current_qty : product.current_qty,
-      attributes: attributes || product.attributes || {}
-    };
+    const parsed = productUpdateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw makeError(parsed.error.issues[0]?.message || 'Invalid input.', 400, 'INVALID_INPUT');
+    }
 
-    const updated = await productsModel.update(id, updates);
+    const existing = await productsModel.findById(id);
+    if (!existing) {
+      throw makeError('Product not found.', 404, 'NOT_FOUND');
+    }
+
+    const updated = await productsModel.update(id, parsed.data);
     res.json({ product: updated });
   } catch (err) {
     next(err);
@@ -80,13 +77,17 @@ async function updateProduct(req, res, next) {
 async function deleteProduct(req, res, next) {
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id)) throw makeError('Invalid product reference.', 400, 'INVALID_INPUT');
+    if (!Number.isInteger(id)) {
+      throw makeError('Invalid product reference.', 400, 'INVALID_INPUT');
+    }
 
-    const product = await productsModel.findById(id);
-    if (!product) throw makeError('Product not found.', 404, 'NOT_FOUND');
+    const existing = await productsModel.findById(id);
+    if (!existing) {
+      throw makeError('Product not found.', 404, 'NOT_FOUND');
+    }
 
     await productsModel.softDelete(id);
-    res.json({ success: true, message: 'Product deleted successfully.' });
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }

@@ -1,183 +1,7 @@
-// Renders the Inventory Dashboard: search + quick category/low-stock filters, a
-// product list with color-coded low-stock/out-of-stock badges and price-trend
-// arrows, and (via the History button) each product's full movement + price
-// timeline — the last piece of Phase 6.
-//
-// Note on "responsive": this whole app renders inside a fixed ~360px-wide card at
-// every viewport size (see .card in styles.css) — there's no desktop layout to
-// adapt down from. The old 8-column table only "worked" by scrolling sideways
-// inside that 360px card, which is exactly the kind of scrolling this redesign
-// removes: everything below is a single stacked column that fits without
-// horizontal scroll, with the low-stock/critical status pulled out as a badge
-// instead of a table cell you had to scroll to find.
-
-async function renderDashboard(container) {
-  container.innerHTML = `
-    <h1 class="title">Inventory Dashboard</h1>
-    <p class="muted">Loading inventory...</p>
-  `;
-
-  let products;
-  try {
-    const result = await window.api.apiRequest('/products');
-    products = result.products || [];
-  } catch (err) {
-    container.innerHTML = `
-      <h1 class="title">Inventory Dashboard</h1>
-      <p class="error-text visible">Failed to load inventory: ${err.message}</p>
-      <button type="button" class="btn-secondary" id="back-btn" style="margin-top: 20px;">Back</button>
-    `;
-    document.getElementById('back-btn').addEventListener('click', () => history.back());
-    return;
-  }
-
-  renderDashboardBody(container, products);
-}
-
-function renderDashboardBody(container, products) {
-  const categoriesPresent = [...new Set(products.map((p) => p.category))].sort();
-  const state = { 
-    search: '', 
-    category: categoriesPresent.length > 0 ? categoriesPresent[0] : '',
-    lowStockOnly: false 
-  };
-
-  container.innerHTML = `
-    <h1 class="title" style="margin-bottom: 4px;">Inventory Dashboard</h1>
-    
-    <div id="dash-stats-container"></div>
-
-    <div class="dash-toolbar">
-      <input
-        type="text"
-        id="dash-search"
-        class="dash-search"
-        placeholder="Search by name or company..."
-        ${products.length === 0 ? 'disabled' : ''}
-      />
-      <div class="category-tabs" id="dash-category-tabs">
-        ${categoriesPresent
-          .map((c) => `<button type="button" class="category-tab ${c === state.category ? 'active' : ''}" data-category="${escapeHtmlLocal(c)}">${escapeHtmlLocal(c)}</button>`)
-          .join('')}
-        ${categoriesPresent.length > 0 ? `<button type="button" class="category-tab" id="dash-edit-category" style="background: transparent; border: 1px dashed var(--color-primary-dark); padding: 4px 8px;">⚙️ Edit</button>` : ''}
-      </div>
-      <button type="button" class="low-stock-toggle" id="dash-low-stock-toggle">
-        ⚠️ Low Stock & Out of Stock
-      </button>
-    </div>
-
-    <div id="dash-list-container"></div>
-  `;
-
-  const searchInput = document.getElementById('dash-search');
-  const listContainer = document.getElementById('dash-list-container');
-  const statsContainer = document.getElementById('dash-stats-container');
-  const tabsEl = document.getElementById('dash-category-tabs');
-  const lowStockToggle = document.getElementById('dash-low-stock-toggle');
-
-  function renderStats(filteredProducts) {
-    const totalItems = filteredProducts.length;
-    let lowStockCount = 0;
-    let outOfStockCount = 0;
-    
-    for (const p of filteredProducts) {
-      if (p.current_qty <= 0) outOfStockCount++;
-      else if (isLowStock(p)) lowStockCount++;
-    }
-
-    statsContainer.innerHTML = `
-      <div class="stats-bar">
-        <div class="stat-card">
-          <div class="stat-value">${totalItems}</div>
-          <div class="stat-label">Total Items</div>
-        </div>
-        <div class="stat-card ${lowStockCount > 0 ? 'stat-warning' : ''}">
-          <div class="stat-value">${lowStockCount}</div>
-          <div class="stat-label">Low Stock</div>
-        </div>
-        <div class="stat-card ${outOfStockCount > 0 ? 'stat-critical' : ''}">
-          <div class="stat-value">${outOfStockCount}</div>
-          <div class="stat-label">Out of Stock</div>
-        </div>
-      </div>
-    `;
-  }
-
-  function applyFilters() {
-    const term = state.search.trim().toLowerCase();
-    
-    // Base products for the currently selected category
-    const categoryProducts = products.filter(p => p.category === state.category);
-    
-    // Update the top stats strictly based on the selected category
-    renderStats(categoryProducts);
-
-    const filtered = categoryProducts.filter((p) => {
-      // Include out-of-stock items in the low-stock filter for maximum utility
-      if (state.lowStockOnly && p.current_qty > 0 && !isLowStock(p)) return false;
-      if (term) {
-        const haystack = `${p.name} ${p.company || ''}`.toLowerCase();
-        if (!haystack.includes(term)) return false;
-      }
-      return true;
-    });
-
-    renderProductList(container, listContainer, filtered, state.category);
-  }
-
-  searchInput.addEventListener('input', (e) => {
-    state.search = e.target.value;
-    applyFilters();
-  });
-
-  tabsEl.addEventListener('click', (e) => {
-    if (e.target.id === 'dash-edit-category') {
-      window.Nav.push(renderCategoryEditor, [container, state.category], { title: 'Edit Category' });
-      return;
-    }
-
-    const btn = e.target.closest('.category-tab');
-    if (!btn) return;
-    state.category = btn.dataset.category;
-    tabsEl.querySelectorAll('.category-tab').forEach((b) => {
-      if (b.id !== 'dash-edit-category') b.classList.toggle('active', b === btn);
-    });
-    applyFilters();
-  });
-
-  lowStockToggle.addEventListener('click', () => {
-    state.lowStockOnly = !state.lowStockOnly;
-    lowStockToggle.classList.toggle('active', state.lowStockOnly);
-    applyFilters();
-  });
-
-  applyFilters();
-}
-
-function isLowStock(p) {
-  return p.low_stock_at != null && p.current_qty <= p.low_stock_at;
-}
-
-// Only surfaces a badge when there's actually something to act on — avoids
-// covering every in-stock row with a "success" badge nobody needs to read.
-function stockStatus(p) {
-  if (p.current_qty <= 0) return { label: 'Out of stock', cls: 'chip-critical' };
-  if (isLowStock(p)) return { label: 'Low stock', cls: 'chip-warning' };
-  return null;
-}
-
-function priceTrendHtml(p) {
-  if (p.last_known_price == null) return '<span class="muted">No price yet</span>';
-  const price = `₹${p.last_known_price}`;
-  if (p.previous_price == null) return `<span>${price}</span> <span class="muted">(first price)</span>`;
-  if (Number(p.last_known_price) > Number(p.previous_price)) {
-    return `<span>${price}</span> <span class="trend-up" title="Up from ₹${p.previous_price}">▲</span>`;
-  }
-  if (Number(p.last_known_price) < Number(p.previous_price)) {
-    return `<span>${price}</span> <span class="trend-down" title="Down from ₹${p.previous_price}">▼</span>`;
-  }
-  return `<span>${price}</span> <span class="muted" title="Unchanged since last time">–</span>`;
-}
+// Renders the Inventory Dashboard: search + category tabs, a
+// pivot-table based product list with color-coded low-stock badges and price-trend
+// arrows, and (via the deep dive) each product's full movement + price timeline
+// and an Edit form to manage product details.
 
 const CANONICAL_MAPPINGS = {
   'CPVC': [
@@ -229,7 +53,163 @@ function getVariation(p) {
   return [p.attributes?.size, p.attributes?.type].filter(Boolean).join(' ') || 'Standard';
 }
 
-function renderProductList(container, listContainer, products, currentCategory = '') {
+function isLowStock(p) {
+  return p.low_stock_at != null && p.current_qty <= p.low_stock_at;
+}
+
+function stockStatus(p) {
+  if (p.current_qty <= 0) return { label: 'Out of stock', cls: 'chip-critical' };
+  if (isLowStock(p)) return { label: 'Low stock', cls: 'chip-warning' };
+  return null;
+}
+
+function priceTrendHtml(p) {
+  if (p.last_known_price == null) return '<span class="muted">No price yet</span>';
+  const price = `₹${p.last_known_price}`;
+  if (p.previous_price == null) return `<span>${price}</span> <span class="muted">(first price)</span>`;
+  if (Number(p.last_known_price) > Number(p.previous_price)) {
+    return `<span>${price}</span> <span class="trend-up" title="Up from ₹${p.previous_price}">▲</span>`;
+  }
+  if (Number(p.last_known_price) < Number(p.previous_price)) {
+    return `<span>${price}</span> <span class="trend-down" title="Down from ₹${p.previous_price}">▼</span>`;
+  }
+  return `<span>${price}</span> <span class="muted" title="Unchanged since last time">–</span>`;
+}
+
+async function renderDashboard(container) {
+  container.innerHTML = `
+    <h1 class="title">Inventory Dashboard</h1>
+    <p class="muted">Loading inventory...</p>
+  `;
+
+  let products;
+  try {
+    const result = await window.api.apiRequest('/products');
+    products = result.products || [];
+  } catch (err) {
+    container.innerHTML = `
+      <h1 class="title">Inventory Dashboard</h1>
+      <p class="error-text visible">Failed to load inventory: ${err.message}</p>
+      <button type="button" class="btn-secondary" id="back-btn" style="margin-top: 20px;">Back</button>
+    `;
+    document.getElementById('back-btn').addEventListener('click', () => history.back());
+    return;
+  }
+
+  renderDashboardBody(container, products);
+}
+
+function renderDashboardBody(container, products) {
+  const categoriesPresent = [...new Set(products.map((p) => p.category))].sort();
+  const state = { 
+    search: '', 
+    category: categoriesPresent.length > 0 ? categoriesPresent[0] : '',
+    lowStockOnly: false
+  };
+
+  container.innerHTML = `
+    <h1 class="title" style="margin-bottom: 4px;">Inventory Dashboard</h1>
+    
+    <div id="dash-stats-container"></div>
+
+    <div class="dash-toolbar">
+      <input
+        type="text"
+        id="dash-search"
+        class="dash-search"
+        placeholder="Search by name or company..."
+        ${products.length === 0 ? 'disabled' : ''}
+      />
+      <div class="category-tabs" id="dash-category-tabs">
+        ${categoriesPresent
+          .map((c) => `<button type="button" class="category-tab ${c === state.category ? 'active' : ''}" data-category="${escapeHtmlLocal(c)}">${escapeHtmlLocal(c)}</button>`)
+          .join('')}
+      </div>
+      <button type="button" class="low-stock-toggle" id="dash-low-stock-toggle">
+        ⚠️ Low Stock & Out of Stock
+      </button>
+    </div>
+
+    <div id="dash-list-container"></div>
+  `;
+
+  const searchInput = document.getElementById('dash-search');
+  const listContainer = document.getElementById('dash-list-container');
+  const statsContainer = document.getElementById('dash-stats-container');
+  const tabsEl = document.getElementById('dash-category-tabs');
+  const lowStockToggle = document.getElementById('dash-low-stock-toggle');
+
+  function renderStats(filteredProducts) {
+    const totalItems = filteredProducts.length;
+    let lowStockCount = 0;
+    let outOfStockCount = 0;
+    
+    for (const p of filteredProducts) {
+      if (p.current_qty <= 0) outOfStockCount++;
+      else if (isLowStock(p)) lowStockCount++;
+    }
+
+    statsContainer.innerHTML = `
+      <div class="stats-bar">
+        <div class="stat-card">
+          <div class="stat-value">${totalItems}</div>
+          <div class="stat-label">Total Items</div>
+        </div>
+        <div class="stat-card ${lowStockCount > 0 ? 'stat-warning' : ''}">
+          <div class="stat-value">${lowStockCount}</div>
+          <div class="stat-label">Low Stock</div>
+        </div>
+        <div class="stat-card ${outOfStockCount > 0 ? 'stat-critical' : ''}">
+          <div class="stat-value">${outOfStockCount}</div>
+          <div class="stat-label">Out of Stock</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function applyFilters() {
+    const term = state.search.trim().toLowerCase();
+    
+    const categoryProducts = products.filter(p => p.category === state.category);
+    renderStats(categoryProducts);
+
+    const filtered = categoryProducts.filter((p) => {
+      if (state.lowStockOnly && p.current_qty > 0 && !isLowStock(p)) return false;
+      if (term) {
+        const haystack = `${p.name} ${p.company || ''}`.toLowerCase();
+        if (!haystack.includes(term)) return false;
+      }
+      return true;
+    });
+
+    renderProductList(container, listContainer, filtered, state.category, products);
+  }
+
+  searchInput.addEventListener('input', (e) => {
+    state.search = e.target.value;
+    applyFilters();
+  });
+
+  tabsEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('.category-tab');
+    if (!btn) return;
+    state.category = btn.dataset.category;
+    tabsEl.querySelectorAll('.category-tab').forEach((b) => {
+      b.classList.toggle('active', b === btn);
+    });
+    applyFilters();
+  });
+
+  lowStockToggle.addEventListener('click', () => {
+    state.lowStockOnly = !state.lowStockOnly;
+    lowStockToggle.classList.toggle('active', state.lowStockOnly);
+    applyFilters();
+  });
+
+  applyFilters();
+}
+
+function renderProductList(container, listContainer, products, currentCategory, allProducts) {
   if (products.length === 0) {
     listContainer.innerHTML = '<p class="muted">No products match this filter.</p>';
     return;
@@ -242,7 +222,6 @@ function renderProductList(container, listContainer, products, currentCategory =
     const varName = getVariation(p);
     allVariations.add(varName);
     
-    // Group by name + company to keep different brands separate
     const key = p.company ? `${p.name}___${p.company}` : p.name;
     if (!rows[key]) rows[key] = { name: p.name, company: p.company, items: {}, unit: p.unit };
     rows[key].items[varName] = p;
@@ -258,13 +237,11 @@ function renderProductList(container, listContainer, products, currentCategory =
 
   let sortedVariations = [];
   if (categoryKey) {
-    // Force the exact canonical columns for this category
     sortedVariations = CANONICAL_MAPPINGS[categoryKey].map(m => m.canonical);
     if (allVariations.has('Other')) {
       sortedVariations.push('Other');
     }
   } else {
-    // Natural sort for sizes dynamically
     sortedVariations = Array.from(allVariations).sort((a, b) => {
       return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
     });
@@ -306,7 +283,6 @@ function renderProductList(container, listContainer, products, currentCategory =
           cellClass = 'pivot-cell-warning';
         }
         
-        // Make individual cells clickable to see their specific history
         rowCellsHtml += `<td class="pivot-cell-qty ${cellClass} history-cell" data-id="${p.id}" data-name="${escapeHtmlLocal(p.name)} ${escapeHtmlLocal(v)}" style="cursor: pointer;">${dotHtml}${p.current_qty}</td>`;
       }
     }
@@ -333,7 +309,6 @@ function renderProductList(container, listContainer, products, currentCategory =
     </div>
   `;
 
-  // Click listener for individual variation cells (existing history view)
   listContainer.querySelectorAll('.history-cell').forEach((cell) => {
     cell.addEventListener('click', () => {
       window.Nav.push(
@@ -344,109 +319,18 @@ function renderProductList(container, listContainer, products, currentCategory =
     });
   });
 
-  // Click listener for the product name (Part 3 - Family deep dive)
   listContainer.querySelectorAll('.product-family-row').forEach((cell) => {
     cell.addEventListener('click', () => {
       window.Nav.push(
         renderProductFamilyDeepDive,
-        [container, cell.dataset.name, cell.dataset.company, products],
+        [container, cell.dataset.name, cell.dataset.company, allProducts],
         { title: cell.dataset.name }
       );
     });
   });
 }
 
-// One product's full timeline: every quantity change and every price it's been
-// bought at, merged into a single chronological list so the owner can see the
-// whole story of a product at a glance rather than two disconnected tables.
-async function renderProductHistory(container, productId, productName) {
-  container.innerHTML = `<p class="muted">Loading history for ${escapeHtmlLocal(productName)}...</p>`;
-
-  let data;
-  try {
-    data = await window.api.apiRequest(`/products/${productId}/history`);
-  } catch (err) {
-    container.innerHTML = `
-      <p class="error-text visible">${err.message}</p>
-      <button type="button" class="btn-secondary" id="history-back-btn">Back</button>
-    `;
-    document.getElementById('history-back-btn').addEventListener('click', () => history.back());
-    return;
-  }
-
-  const { product, movements, priceHistory } = data;
-
-  // Merge movements and price entries into one timeline, sorted newest first.
-  const events = [
-    ...movements.map((m) => ({
-      type: 'movement',
-      date: m.created_at,
-      changeQty: m.change_qty,
-    })),
-    ...priceHistory.map((ph) => ({
-      type: 'price',
-      date: ph.recorded_at,
-      price: ph.price,
-    })),
-  ].sort((a, b) => new Date(b.date) - new Date(a.date));
-
-  const rowsHtml = events.length === 0
-    ? '<p class="muted" style="padding: 10px;">No history yet for this product.</p>'
-    : events.map((e) => {
-        const dateStr = new Date(e.date).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-        if (e.type === 'movement') {
-          const isIncrease = e.changeQty > 0;
-          const sign = isIncrease ? '+' : '';
-          const color = isIncrease ? 'var(--color-success, #2E7D5B)' : 'var(--color-error, #B33A3A)';
-          return `
-            <div style="padding: 14px 10px; border-bottom: 1px solid #EFECE4; display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                <div style="font-size: 13px; font-weight: 600; color: var(--color-text);">Stock Movement</div>
-                <div class="muted" style="font-size: 11px; margin-top: 4px;">${dateStr}</div>
-              </div>
-              <span style="color: ${color}; font-weight: 700; font-variant-numeric: tabular-nums; font-size: 16px;">
-                ${sign}${e.changeQty} ${escapeHtmlLocal(product.unit)}
-              </span>
-            </div>
-          `;
-        }
-        return `
-          <div style="padding: 14px 10px; border-bottom: 1px solid #EFECE4; display: flex; justify-content: space-between; align-items: center; background: #FAF9F6;">
-            <div>
-              <div style="font-size: 13px; font-weight: 600; color: var(--color-text);">Price Recorded</div>
-              <div class="muted" style="font-size: 11px; margin-top: 4px;">${dateStr}</div>
-            </div>
-            <span style="font-weight: 700; font-variant-numeric: tabular-nums; font-size: 16px; color: var(--color-primary-dark);">
-              ₹${e.price}
-            </span>
-          </div>
-        `;
-      }).join('');
-
-  container.innerHTML = `
-    <h1 class="title" style="margin-bottom: 6px;">${escapeHtmlLocal(productName)}</h1>
-    <p class="muted" style="font-size: 13px;">
-      Current stock: <strong style="color: var(--color-text)">${product.current_qty} ${escapeHtmlLocal(product.unit)}</strong> · 
-      Last price: <strong style="color: var(--color-text)">${product.last_known_price != null ? `₹${product.last_known_price}` : '-'}</strong>
-    </p>
-    <div style="margin-top: 24px; border: 1px solid #E5E2D9; border-radius: 10px; overflow: hidden;">
-      <div style="background: var(--color-surface); padding: 10px 14px; border-bottom: 1px solid #E5E2D9; font-size: 11px; text-transform: uppercase; font-weight: 700; color: var(--color-text-muted); letter-spacing: 0.05em;">
-        History Ledger
-      </div>
-      ${rowsHtml}
-    </div>
-    <button type="button" class="btn-secondary" id="history-back-btn" style="margin-top: 20px;">Back</button>
-  `;
-  document.getElementById('history-back-btn').addEventListener('click', () => history.back());
-}
-
-function escapeHtmlLocal(str) {
-  const div = document.createElement('div');
-  div.textContent = str == null ? '' : String(str);
-  return div.innerHTML;
-}
-
-async function renderProductFamilyDeepDive(container, name, company, products) {
+function renderProductFamilyDeepDive(container, name, company, products) {
   const familyProducts = products.filter(p => p.name === name && (p.company || '') === company);
   
   familyProducts.sort((a, b) => getVariation(a).localeCompare(getVariation(b), undefined, { numeric: true, sensitivity: 'base' }));
@@ -488,11 +372,9 @@ async function renderProductFamilyDeepDive(container, name, company, products) {
 
   container.querySelectorAll('.edit-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      window.Nav.push(
-        renderProductEditor,
-        [container, Number(btn.dataset.id)],
-        { title: 'Edit Product' }
-      );
+      const product = products.find((p) => p.id === Number(btn.dataset.id));
+      if (!product) return;
+      window.Nav.push(renderProductEdit, [container, product], { title: 'Edit Product' });
     });
   });
 
@@ -509,176 +391,172 @@ async function renderProductFamilyDeepDive(container, name, company, products) {
   document.getElementById('deep-dive-back-btn').addEventListener('click', () => history.back());
 }
 
-async function renderProductEditor(container, productId) {
-  container.innerHTML = `<p class="muted">Loading product details...</p>`;
+function renderProductEdit(container, product) {
+  const size = product.attributes?.size || '';
+
+  container.innerHTML = `
+    <h1 class="title">Edit Product</h1>
+    <p class="muted" style="margin-bottom: 16px;">
+      Current stock (${product.current_qty} ${escapeHtmlLocal(product.unit)}) and category can't be changed here —
+      those go through a scan or a bill so the history stays accurate.
+    </p>
+
+    <label for="edit-name">Product name</label>
+    <input type="text" id="edit-name" value="${escapeHtmlLocal(product.name)}" />
+
+    <label for="edit-company">Company</label>
+    <input type="text" id="edit-company" value="${escapeHtmlLocal(product.company || '')}" />
+
+    <label for="edit-unit">Unit</label>
+    <input type="text" id="edit-unit" value="${escapeHtmlLocal(product.unit || 'pcs')}" />
+
+    <label for="edit-size">Size / Variant</label>
+    <input type="text" id="edit-size" value="${escapeHtmlLocal(size)}" placeholder="e.g. 3/4 inch, 1L" />
+
+    <label for="edit-low-stock">Low stock alert at</label>
+    <input type="number" id="edit-low-stock" min="0" inputmode="numeric" value="${product.low_stock_at ?? 0}" />
+    <p class="muted" style="margin: 4px 0 16px; font-size: 13px;">
+      You'll see a "Low stock" badge on the dashboard once quantity drops to this number or below.
+    </p>
+
+    <p id="edit-error" class="error-text"></p>
+
+    <button type="button" class="btn-primary" id="save-edit-btn">Save Changes</button>
+    <button type="button" class="btn-danger" id="delete-btn" style="margin-top: 10px;">Delete</button>
+    <button type="button" class="btn-secondary" id="cancel-edit-btn" style="margin-top: 10px;">Cancel</button>
+  `;
+
+  document.getElementById('cancel-edit-btn').addEventListener('click', () => history.back());
+
+  document.getElementById('delete-btn').addEventListener('click', async () => {
+    if (!confirm('Are you sure you want to delete this product? This will hide it from the dashboard.')) {
+      return;
+    }
+    const errorEl = document.getElementById('edit-error');
+    errorEl.textContent = '';
+    errorEl.classList.remove('visible');
+
+    const deleteBtn = document.getElementById('delete-btn');
+    deleteBtn.disabled = true;
+    deleteBtn.textContent = 'Deleting...';
+
+    try {
+      await window.api.apiRequest(`/products/${product.id}`, { method: 'DELETE' });
+      // Go back twice to return to the main dashboard
+      history.go(-2);
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.classList.add('visible');
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = 'Delete';
+    }
+  });
+
+  document.getElementById('save-edit-btn').addEventListener('click', async () => {
+    const errorEl = document.getElementById('edit-error');
+    errorEl.textContent = '';
+    errorEl.classList.remove('visible');
+
+    const name = document.getElementById('edit-name').value.trim();
+    if (!name) {
+      errorEl.textContent = 'Product name is required.';
+      errorEl.classList.add('visible');
+      return;
+    }
+
+    const lowStockAt = Number(document.getElementById('edit-low-stock').value);
+    if (!Number.isInteger(lowStockAt) || lowStockAt < 0) {
+      errorEl.textContent = 'Low stock threshold must be 0 or a positive whole number.';
+      errorEl.classList.add('visible');
+      return;
+    }
+
+    const saveBtn = document.getElementById('save-edit-btn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    try {
+      await window.api.apiRequest(`/products/${product.id}`, {
+        method: 'PATCH',
+        body: {
+          name,
+          company: document.getElementById('edit-company').value.trim(),
+          unit: document.getElementById('edit-unit').value.trim() || 'pcs',
+          lowStockAt,
+          attributes: { size: document.getElementById('edit-size').value.trim() },
+        },
+      });
+      history.back();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.classList.add('visible');
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Changes';
+    }
+  });
+}
+
+async function renderProductHistory(container, productId, productName) {
+  container.innerHTML = `
+    <h1 class="title">${escapeHtmlLocal(productName)}</h1>
+    <p class="muted">Loading history...</p>
+  `;
+
   let data;
   try {
     data = await window.api.apiRequest(`/products/${productId}/history`);
   } catch (err) {
-    container.innerHTML = `<p class="error-text visible">${err.message}</p><button class="btn-secondary" onclick="history.back()">Back</button>`;
+    container.innerHTML = `
+      <h1 class="title">${escapeHtmlLocal(productName)}</h1>
+      <p class="error-text visible">${err.message}</p>
+      <button class="btn-secondary" onclick="history.back()">Back</button>
+    `;
     return;
   }
-  const product = data.product;
+
+  const { product, movements, priceHistory } = data;
+
+  const events = [
+    ...movements.map((m) => ({ type: 'movement', date: m.created_at, ...m })),
+    ...priceHistory.map((h) => ({ type: 'price', date: h.recorded_at, ...h })),
+  ].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  const rowsHtml = events.length === 0
+    ? '<p class="muted">No history yet for this product.</p>'
+    : events.map((e) => {
+        const dateStr = new Date(e.date).toLocaleString();
+        if (e.type === 'movement') {
+          const isIncrease = e.changeQty > 0;
+          const sign = isIncrease ? '+' : '';
+          const color = isIncrease ? 'var(--color-primary-dark)' : 'var(--color-error)';
+          return `
+            <div style="padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between;">
+              <span>${dateStr}</span>
+              <span style="color: ${color}; font-weight: 600; font-variant-numeric: tabular-nums;">
+                ${sign}${e.changeQty} ${product.unit}
+              </span>
+            </div>
+          `;
+        }
+        return `
+          <div style="padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between;">
+            <span>${dateStr}</span>
+            <span style="font-variant-numeric: tabular-nums;">Price recorded: ₹${e.price}</span>
+          </div>
+        `;
+      }).join('');
 
   container.innerHTML = `
-    <h1 class="title">Edit Product</h1>
-    <p class="muted">Make changes to product details or delete it.</p>
-    <form id="edit-product-form" style="display: flex; flex-direction: column; gap: 12px; margin-top: 16px;">
-      <label class="input-label" style="text-align:left">Name <span style="color:red">*</span>
-        <input type="text" name="name" class="input" value="${escapeHtmlLocal(product.name)}" required>
-      </label>
-      <label class="input-label" style="text-align:left">Company
-        <input type="text" name="company" class="input" value="${escapeHtmlLocal(product.company || '')}">
-      </label>
-      <label class="input-label" style="text-align:left">Category <span style="color:red">*</span>
-        <input type="text" name="category" class="input" value="${escapeHtmlLocal(product.category)}" required>
-      </label>
-      <div style="display:flex; gap:12px">
-        <label class="input-label" style="text-align:left; flex:1">Size
-          <input type="text" name="size" class="input" value="${escapeHtmlLocal(product.attributes?.size || '')}">
-        </label>
-        <label class="input-label" style="text-align:left; flex:1">Type / Base
-          <input type="text" name="type" class="input" value="${escapeHtmlLocal(product.attributes?.type || '')}">
-        </label>
-      </div>
-      <div style="display:flex; gap:12px">
-        <label class="input-label" style="text-align:left; flex:1">Current Qty <span style="color:red">*</span>
-          <input type="number" name="current_qty" class="input" min="0" value="${product.current_qty}" required>
-        </label>
-        <label class="input-label" style="text-align:left; flex:1">Unit <span style="color:red">*</span>
-          <input type="text" name="unit" class="input" value="${escapeHtmlLocal(product.unit)}" required>
-        </label>
-      </div>
-      <p id="edit-error" class="error-text" style="margin-top: 8px;"></p>
-      <div style="display: flex; gap: 12px; margin-top: 12px;">
-        <button type="submit" class="btn-primary" style="flex: 1;" id="btn-save">Save Changes</button>
-        <button type="button" class="btn-secondary" onclick="history.back()" style="flex: 1;">Cancel</button>
-      </div>
-      <button type="button" class="btn-secondary" id="btn-delete" style="margin-top: 24px; color: var(--color-error); border-color: var(--color-error);">Delete Product</button>
-    </form>
+    <h1 class="title">${escapeHtmlLocal(product.name)}</h1>
+    <p class="muted">Current stock: ${product.current_qty} ${product.unit} · Last price: ${product.last_known_price != null ? `₹${product.last_known_price}` : '-'}</p>
+    <div style="margin-top: 16px; border-top: 2px solid #ccc;">
+      ${rowsHtml}
+    </div>
+    <button type="button" class="btn-secondary" id="history-back-btn" style="margin-top: 20px;">Back</button>
   `;
-
-  const form = document.getElementById('edit-product-form');
-  const errorEl = document.getElementById('edit-error');
-  const btnSave = document.getElementById('btn-save');
-  const btnDelete = document.getElementById('btn-delete');
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    errorEl.classList.remove('visible');
-    btnSave.disabled = true;
-    btnSave.textContent = 'Saving...';
-
-    const fd = new FormData(form);
-    const payload = {
-      name: fd.get('name').trim(),
-      company: fd.get('company').trim() || null,
-      category: fd.get('category').trim(),
-      unit: fd.get('unit').trim(),
-      current_qty: parseInt(fd.get('current_qty'), 10),
-      attributes: {
-        ...product.attributes,
-        size: fd.get('size').trim() || undefined,
-        type: fd.get('type').trim() || undefined,
-      }
-    };
-
-    try {
-      await window.api.apiRequest(`/products/${product.id}`, {
-        method: 'PUT',
-        body: payload
-      });
-      // Force hard reload of the dashboard to pick up changes
-      window.location.reload();
-    } catch (err) {
-      errorEl.textContent = err.message;
-      errorEl.classList.add('visible');
-      btnSave.disabled = false;
-      btnSave.textContent = 'Save Changes';
-    }
-  });
-
-  btnDelete.addEventListener('click', async () => {
-    if (!confirm('Are you sure you want to delete this product? This action cannot be undone.')) return;
-    
-    btnDelete.disabled = true;
-    btnDelete.textContent = 'Deleting...';
-    try {
-      await window.api.apiRequest(`/products/${product.id}`, { method: 'DELETE' });
-      window.location.reload();
-    } catch (err) {
-      errorEl.textContent = err.message;
-      errorEl.classList.add('visible');
-      btnDelete.disabled = false;
-      btnDelete.textContent = 'Delete Product';
-    }
-  });
-}
-
-async function renderCategoryEditor(container, categoryName) {
-  container.innerHTML = `
-    <h1 class="title">Edit Category</h1>
-    <p class="muted">Rename or delete the category: <strong>${escapeHtmlLocal(categoryName)}</strong></p>
-    <form id="edit-category-form" style="display: flex; flex-direction: column; gap: 12px; margin-top: 16px;">
-      <label class="input-label" style="text-align:left">Category Name <span style="color:red">*</span>
-        <input type="text" name="name" class="input" value="${escapeHtmlLocal(categoryName)}" required maxlength="40">
-      </label>
-      <p id="cat-edit-error" class="error-text" style="margin-top: 8px;"></p>
-      <div style="display: flex; gap: 12px; margin-top: 12px;">
-        <button type="submit" class="btn-primary" style="flex: 1;" id="cat-btn-save">Save Changes</button>
-        <button type="button" class="btn-secondary" onclick="history.back()" style="flex: 1;">Cancel</button>
-      </div>
-      <button type="button" class="btn-secondary" id="cat-btn-delete" style="margin-top: 24px; color: var(--color-error); border-color: var(--color-error);">Delete Category</button>
-    </form>
-  `;
-
-  const form = document.getElementById('edit-category-form');
-  const errorEl = document.getElementById('cat-edit-error');
-  const btnSave = document.getElementById('cat-btn-save');
-  const btnDelete = document.getElementById('cat-btn-delete');
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    errorEl.classList.remove('visible');
-    btnSave.disabled = true;
-    btnSave.textContent = 'Saving...';
-
-    const newName = new FormData(form).get('name').trim();
-    if (newName === categoryName) {
-      history.back();
-      return;
-    }
-
-    try {
-      await window.api.apiRequest(`/categories/${encodeURIComponent(categoryName)}`, {
-        method: 'PUT',
-        body: { newName }
-      });
-      window.location.reload();
-    } catch (err) {
-      errorEl.textContent = err.message;
-      errorEl.classList.add('visible');
-      btnSave.disabled = false;
-      btnSave.textContent = 'Save Changes';
-    }
-  });
-
-  btnDelete.addEventListener('click', async () => {
-    if (!confirm('Are you sure you want to delete this category? All products in this category will also be deleted or orphaned. This action cannot be undone.')) return;
-    
-    btnDelete.disabled = true;
-    btnDelete.textContent = 'Deleting...';
-    try {
-      await window.api.apiRequest(`/categories/${encodeURIComponent(categoryName)}`, { method: 'DELETE' });
-      window.location.reload();
-    } catch (err) {
-      errorEl.textContent = err.message;
-      errorEl.classList.add('visible');
-      btnDelete.disabled = false;
-      btnDelete.textContent = 'Delete Category';
-    }
-  });
+  document.getElementById('history-back-btn').addEventListener('click', () => history.back());
 }
 
 window.renderDashboard = renderDashboard;
 window.renderProductHistory = renderProductHistory;
+window.renderProductEdit = renderProductEdit;

@@ -21,6 +21,7 @@ const confirmBillSchema = z.object({
       company: z.string().optional(),
       unit: z.string().optional(),
       attributes: z.record(z.any()).optional(),
+      lowStockAt: z.number().int().min(0).max(1000000).optional(),
     }).optional(),
     productId: z.number().int().positive().optional(),
     unitPrice: z.number().nullable().optional(),

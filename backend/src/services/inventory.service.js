@@ -60,6 +60,7 @@ async function confirmScanEvent({
           company: newProductDetails.company,
           unit: newProductDetails.unit,
           attributes: newProductDetails.attributes,
+          lowStockAt: newProductDetails.lowStockAt,
           initialQty: 0, // starts at 0, then the movement below applies the actual change
         },
         client
@@ -172,6 +173,7 @@ async function confirmBillEvent({ billId, items, confirmedByUserId }) {
             company: item.newProductDetails.company,
             unit: item.newProductDetails.unit,
             attributes: item.newProductDetails.attributes,
+            lowStockAt: item.newProductDetails.lowStockAt,
             initialQty: 0,
             hsnCode: lineItem.hsn_code || lineItem.raw_extracted?.hsnCode || null,
           },
