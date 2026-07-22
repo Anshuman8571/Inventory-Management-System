@@ -13,7 +13,7 @@
 // is left to fail with a clear error — caching a write and "pretending" it
 // succeeded would risk silent data loss when it never actually reached the server.
 
-const SHELL_CACHE = 'stock-inventory-shell-v3';
+const SHELL_CACHE = 'stock-inventory-shell-v4';
 const DATA_CACHE = 'stock-inventory-data-v1';
 
 const SHELL_ASSETS = [
