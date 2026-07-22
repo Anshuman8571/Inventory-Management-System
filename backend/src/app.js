@@ -1,8 +1,10 @@
 const express = require('express');
+const cors = require('cors');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
 
+app.use(cors());
 app.use(express.json({ limit: '10mb' })); // generous limit since scan photos are sent as base64
 
 // Health check — used to verify the container/DB connection is alive.
