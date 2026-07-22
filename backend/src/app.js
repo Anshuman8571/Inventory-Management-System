@@ -8,9 +8,8 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' })); // generous limit since scan photos are sent as base64
 
 // Health check — used to verify the container/DB connection is alive.
-// Also useful when migrating hosting later (cloud -> Raspberry Pi) to confirm the new
-// deployment is actually up before cutting over.
-app.get('/health', (req, res) => {
+// We support both /health and /healthz since Render defaults to /healthz.
+app.get(['/health', '/healthz'], (req, res) => {
   res.json({ status: 'ok' });
 });
 
