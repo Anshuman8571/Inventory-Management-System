@@ -1,7 +1,9 @@
 // Single shared fetch wrapper — every screen's API calls go through this file.
 // Centralizes: base URL, attaching the auth token, and consistent error parsing.
 
-const API_BASE = window.API_BASE_URL || ''; // same-origin by default; override if needed
+// Dynamically use local API (Nginx proxy) when testing locally, and Render API when live on Vercel.
+const isLocal = window.location.hostname === 'localhost' || window.location.hostname.startsWith('10.') || window.location.hostname.startsWith('192.168.');
+const API_BASE = isLocal ? '' : 'https://inventory-management-system-s0u6.onrender.com';
 
 function getToken() {
   return localStorage.getItem('token');
